@@ -25,6 +25,17 @@ const LoginSchema = z.object({
   clientPlatform: z.string().optional(),
 });
 
+const RegisterSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  fullName: z.string().min(1, 'Full name is required').max(100),
+  displayName: z.string().optional(),
+  invitationToken: z.string().optional(),
+  deviceFingerprint: z.string().optional(),
+  deviceName: z.string().optional(),
+  clientPlatform: z.string().optional(),
+});
+
 const ChangePasswordSchema = z.object({
   currentPassword: z.string().min(8),
   newPassword: z.string().min(12, 'Password must be at least 12 characters'),
@@ -178,6 +189,173 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'INTERNAL_SERVER_ERROR' });
+  }
+});
+
+/**
+ * POST /api/auth/register
+ * Self-registration & invitation onboarding with automatic session & chat link
+ */
+router.post('/register', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const parseResult = RegisterSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        details: parseResult.error.flatten(),
+      });
+      return;
+    }
+
+    const {
+      email,
+      password,
+      fullName,
+      displayName,
+      invitationToken,
+      deviceFingerprint,
+      deviceName,
+      clientPlatform,
+    } = parseResult.data;
+
+    // 1. Check if email already registered
+    const existing = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+    });
+
+    if (existing) {
+      res.status(409).json({
+        error: 'EMAIL_ALREADY_EXISTS',
+        message: 'A user account with this email address already exists.',
+      });
+      return;
+    }
+
+    // 2. Validate invitation token if provided
+    let assignedRole = 'USER';
+    let matchedInvitationId: string | null = null;
+
+    if (invitationToken) {
+      const tokenHash = hashToken(invitationToken);
+      const invitation = await prisma.invitation.findFirst({
+        where: {
+          token: tokenHash,
+          expiresAt: { gt: new Date() },
+          acceptedAt: null,
+        },
+      });
+
+      if (!invitation) {
+        res.status(400).json({
+          error: 'INVALID_INVITATION',
+          message: 'The provided invitation link or token is invalid or has expired.',
+        });
+        return;
+      }
+
+      assignedRole = invitation.role;
+      matchedInvitationId = invitation.id;
+    }
+
+    // 3. Hash password with Argon2id
+    const passwordHash = await hashPassword(password);
+    const fingerprint =
+      deviceFingerprint || `fp-web-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const devName = deviceName || 'Web Browser';
+
+    // 4. Create user, role, device, and initial session in transaction
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email: email.toLowerCase(),
+          passwordHash,
+          fullName,
+          displayName: displayName || fullName,
+          status: 'ACTIVE',
+          roles: {
+            create: { role: assignedRole },
+          },
+        },
+        include: { roles: true },
+      });
+
+      const device = await tx.device.create({
+        data: {
+          userId: user.id,
+          deviceFingerprint: fingerprint,
+          deviceName: devName,
+          clientPlatform: clientPlatform || 'WEB',
+          isActive: true,
+        },
+      });
+
+      const rawSessionToken = generateSecureToken(32);
+      const sessionTokenHash = hashToken(rawSessionToken);
+      const expiresAt = new Date(Date.now() + 86400000 * 7); // 7 days
+
+      const session = await tx.userSession.create({
+        data: {
+          userId: user.id,
+          deviceId: device.id,
+          sessionTokenHash,
+          ipAddress: req.ip || req.socket.remoteAddress || '127.0.0.1',
+          userAgent: req.headers['user-agent'] || 'Unknown',
+          expiresAt,
+        },
+      });
+
+      if (matchedInvitationId) {
+        await tx.invitation.update({
+          where: { id: matchedInvitationId },
+          data: { acceptedAt: new Date() },
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          userId: user.id,
+          actorEmail: user.email,
+          action: 'USER_REGISTERED',
+          entityType: 'USER',
+          entityId: user.id,
+          details: JSON.stringify({ role: assignedRole, deviceName: devName }),
+        },
+      });
+
+      return { user, device, session };
+    });
+
+    // 5. Generate signed session JWT
+    const token = await signSessionToken({
+      userId: result.user.id,
+      sessionId: result.session.id,
+      deviceId: result.device.id,
+      email: result.user.email,
+      role: assignedRole,
+    });
+
+    res.cookie(SESSION_COOKIE_NAME, token, sessionCookieOptions);
+
+    res.status(201).json({
+      success: true,
+      message: 'Registration successful. Welcome to GCS CONNECT!',
+      user: {
+        id: result.user.id,
+        email: result.user.email,
+        fullName: result.user.fullName,
+        displayName: result.user.displayName,
+        roles: result.user.roles.map((r) => r.role),
+      },
+      device: {
+        id: result.device.id,
+        deviceName: result.device.deviceName,
+      },
+      token,
+      chatLink: `/?chatWith=${encodeURIComponent(result.user.email)}`,
+    });
+  } catch (err: any) {
+    console.error('Registration error:', err);
+    res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: err.message });
   }
 });
 

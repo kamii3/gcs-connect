@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import {
   ShieldCheck,
   Users,
@@ -24,6 +25,12 @@ import {
   KeyRound,
   ExternalLink,
   ChevronDown,
+  Copy,
+  LogIn,
+  Mail,
+  Link2,
+  Check,
+  ArrowRight,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
@@ -137,6 +144,13 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
 
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [adminLoginEmail, setAdminLoginEmail] = useState('admin@globalcrestsolutions.com');
+  const [adminLoginPassword, setAdminLoginPassword] = useState('ChangeMeOnFirstLogin2026!');
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
+
   // Users Tab State
   const [users, setUsers] = useState<UserSummary[]>([]);
   const [userSearch, setUserSearch] = useState('');
@@ -153,10 +167,84 @@ export default function AdminDashboardPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
 
+  // Created User Direct Links
+  const [createdChatLink, setCreatedChatLink] = useState<string | null>(null);
+  const [createdRegisterLink, setCreatedRegisterLink] = useState<string | null>(null);
+  const [chatLinkCopied, setChatLinkCopied] = useState(false);
+  const [registerLinkCopied, setRegisterLinkCopied] = useState(false);
+
+  // Invitation Link Generator State
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'USER' | 'ADMIN' | 'SECURITY_AUDITOR'>('USER');
+  const [generatedInviteLink, setGeneratedInviteLink] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const [inviteChatCopied, setInviteChatCopied] = useState(false);
+  const [inviteLoading, setInviteLoading] = useState(false);
+
   // Audit Logs Tab State
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [auditSearch, setAuditSearch] = useState('');
   const [auditActionFilter, setAuditActionFilter] = useState('');
+
+  const checkAuth = async () => {
+    try {
+      const res = await fetch('/api/auth/me');
+      if (res.ok) {
+        const data = await res.json();
+        const roles = data.user?.roles || [];
+        const isAdmin = roles.some(
+          (r: any) =>
+            (typeof r === 'string' ? r : r.role) === 'ADMIN' ||
+            (typeof r === 'string' ? r : r.role) === 'SUPER_ADMIN'
+        );
+        if (isAdmin) {
+          setIsAuthenticated(true);
+          reloadData();
+          return;
+        }
+      }
+      setIsAuthenticated(false);
+      setLoading(false);
+    } catch {
+      setIsAuthenticated(false);
+      setLoading(false);
+    }
+  };
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+    setLoginLoading(true);
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: adminLoginEmail,
+          password: adminLoginPassword,
+          deviceFingerprint: `admin-workstation-${Date.now()}`,
+          deviceName: 'Admin Operations Console',
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setLoginError(data.message || 'Authentication failed. Please verify credentials.');
+        setLoginLoading(false);
+        return;
+      }
+
+      setIsAuthenticated(true);
+      setLoginLoading(false);
+      reloadData();
+    } catch (err: any) {
+      setLoginError(err.message || 'Network error occurred.');
+      setLoginLoading(false);
+    }
+  };
 
   const fetchMetrics = async () => {
     try {
@@ -207,13 +295,15 @@ export default function AdminDashboardPage() {
   };
 
   useEffect(() => {
-    reloadData();
+    checkAuth();
   }, []);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateError(null);
     setCreateSuccess(null);
+    setCreatedChatLink(null);
+    setCreatedRegisterLink(null);
 
     try {
       const res = await fetch('/api/admin/users/create', {
@@ -234,17 +324,54 @@ export default function AdminDashboardPage() {
       }
 
       setCreateSuccess(`Account created for ${data.user.email}`);
+      if (typeof window !== 'undefined') {
+        setCreatedChatLink(`${window.location.origin}/?chatWith=${encodeURIComponent(data.user.email)}`);
+        setCreatedRegisterLink(`${window.location.origin}/register?email=${encodeURIComponent(data.user.email)}`);
+      }
       setCreateEmail('');
       setCreateFullName('');
       setCreatePassword('');
       fetchUsers();
       fetchMetrics();
-      setTimeout(() => {
-        setIsCreateUserModalOpen(false);
-        setCreateSuccess(null);
-      }, 1500);
+      fetchAuditLogs();
     } catch (err: any) {
       setCreateError(err.message || 'Network error occurred.');
+    }
+  };
+
+  const handleGenerateInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInviteError(null);
+    setInviteLoading(true);
+
+    try {
+      const res = await fetch('/api/admin/invitations/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: inviteEmail,
+          role: inviteRole,
+          expiresInDays: 7,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setInviteError(data.message || 'Failed to create invitation.');
+        setInviteLoading(false);
+        return;
+      }
+
+      if (typeof window !== 'undefined') {
+        const token = data.invitationToken || data.token || '';
+        const fullLink = `${window.location.origin}/register?token=${token}&email=${encodeURIComponent(inviteEmail)}`;
+        setGeneratedInviteLink(fullLink);
+      }
+      setInviteLoading(false);
+      fetchAuditLogs();
+    } catch (err: any) {
+      setInviteError(err.message || 'Network error occurred.');
+      setInviteLoading(false);
     }
   };
 
@@ -317,6 +444,111 @@ export default function AdminDashboardPage() {
     }
   };
 
+  if (isAuthenticated === false) {
+    return (
+      <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-gcs-bg px-4 py-8 font-sans">
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[350px] bg-gcs-emerald/5 blur-[120px] rounded-full pointer-events-none" />
+
+        <div className="relative w-full max-w-md bg-gcs-card border border-gcs-border rounded-2xl shadow-2xl p-6 sm:p-8 animate-fade-in">
+          {/* Header Branding */}
+          <div className="flex flex-col items-center text-center mb-6">
+            <div className="h-14 w-14 rounded-2xl bg-gcs-emerald/15 border border-gcs-emerald/30 flex items-center justify-center text-gcs-mint mb-3 shadow-inner">
+              <ShieldCheck className="w-8 h-8 text-gcs-emerald" />
+            </div>
+            <h1 className="text-xl font-bold text-gcs-text tracking-tight">
+              GCS CONNECT Admin Console
+            </h1>
+            <p className="text-xs text-gcs-muted mt-1 max-w-xs">
+              Restricted Access — Authorized Security & System Administrators Only
+            </p>
+          </div>
+
+          {/* Credentials Helper Box (as requested by user) */}
+          <div className="mb-5 p-3.5 rounded-xl bg-gcs-sidebar border border-gcs-emerald/30 text-xs flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-gcs-mint flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
+                <KeyRound className="w-3.5 h-3.5 text-gcs-emerald" />
+                Default Admin Credentials
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setAdminLoginEmail('admin@globalcrestsolutions.com');
+                  setAdminLoginPassword('ChangeMeOnFirstLogin2026!');
+                }}
+                className="text-[10.5px] px-2 py-0.5 rounded bg-gcs-emerald/20 hover:bg-gcs-emerald/30 text-gcs-mint font-medium transition-colors"
+              >
+                Auto-Fill
+              </button>
+            </div>
+            <div className="font-mono text-[11px] text-gcs-muted flex flex-col gap-0.5">
+              <div>
+                <span className="text-gcs-muted/60">Username / Email:</span>{' '}
+                <span className="text-gcs-text select-all font-semibold">admin@globalcrestsolutions.com</span>
+              </div>
+              <div>
+                <span className="text-gcs-muted/60">Password:</span>{' '}
+                <span className="text-gcs-text select-all font-semibold">ChangeMeOnFirstLogin2026!</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Error Banner */}
+          {loginError && (
+            <div className="mb-4 p-3 rounded-xl bg-[#D94D55]/15 border border-[#D94D55]/40 text-[#ff8e95] text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{loginError}</span>
+            </div>
+          )}
+
+          {/* Login Form */}
+          <form onSubmit={handleAdminLogin} className="flex flex-col gap-4">
+            <Input
+              label="Admin Email Address"
+              type="email"
+              required
+              value={adminLoginEmail}
+              onChange={(e) => setAdminLoginEmail(e.target.value)}
+            />
+
+            <Input
+              label="Admin Password"
+              type="password"
+              required
+              value={adminLoginPassword}
+              onChange={(e) => setAdminLoginPassword(e.target.value)}
+            />
+
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={loginLoading}
+              className="w-full mt-2 gap-2 h-10 text-sm font-semibold bg-gcs-emerald hover:bg-[#00c28c]"
+            >
+              {loginLoading ? (
+                <span>Authenticating...</span>
+              ) : (
+                <>
+                  <LogIn className="w-4 h-4" />
+                  <span>Authenticate & Enter Console</span>
+                </>
+              )}
+            </Button>
+          </form>
+
+          <div className="mt-6 pt-4 border-t border-gcs-border/50 text-center">
+            <Link
+              href="/"
+              className="text-xs text-gcs-muted hover:text-gcs-mint transition-colors inline-flex items-center gap-1"
+            >
+              <span>← Return to Live Chat</span>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gcs-bg text-gcs-text flex flex-col font-sans">
       {/* Top Navigation Bar */}
@@ -339,7 +571,7 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* Global Controls & Status */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gcs-card border border-gcs-border text-xs text-gcs-muted">
             <span className="w-2 h-2 rounded-full bg-gcs-emerald animate-pulse" />
             <span className="text-gcs-mint font-medium">DTLS & X3DH Engine Online</span>
@@ -357,14 +589,43 @@ export default function AdminDashboardPage() {
           </Button>
 
           <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setIsInviteModalOpen(true);
+              setGeneratedInviteLink(null);
+              setInviteEmail('');
+            }}
+            className="flex items-center gap-1.5 text-xs border-gcs-emerald/30 text-gcs-mint hover:bg-gcs-card"
+          >
+            <Link2 className="w-3.5 h-3.5 text-gcs-emerald" />
+            Invite Link
+          </Button>
+
+          <Button
             variant="primary"
             size="sm"
-            onClick={() => setIsCreateUserModalOpen(true)}
+            onClick={() => {
+              setIsCreateUserModalOpen(true);
+              setCreatedChatLink(null);
+              setCreatedRegisterLink(null);
+            }}
             className="flex items-center gap-1.5 text-xs bg-gcs-emerald hover:bg-[#00c28c]"
           >
             <UserPlus className="w-3.5 h-3.5" />
             New User
           </Button>
+
+          <Link href="/">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex items-center gap-1 text-xs text-gcs-muted hover:text-gcs-text"
+            >
+              <ExternalLink className="w-3 h-3" />
+              Chat
+            </Button>
+          </Link>
         </div>
       </header>
 
@@ -893,9 +1154,53 @@ export default function AdminDashboardPage() {
           )}
 
           {createSuccess && (
-            <div className="p-3 rounded-xl bg-gcs-emerald/15 border border-gcs-emerald/40 text-gcs-mint text-xs flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0 text-gcs-emerald" />
-              <span>{createSuccess}</span>
+            <div className="p-3.5 rounded-xl bg-gcs-emerald/15 border border-gcs-emerald/40 text-gcs-mint text-xs flex flex-col gap-2.5">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-gcs-emerald" />
+                <span className="font-semibold">{createSuccess}</span>
+              </div>
+
+              {createdChatLink && (
+                <div className="flex flex-col gap-1.5 pt-2 border-t border-gcs-emerald/30">
+                  <span className="text-[11px] text-gcs-muted font-medium">Direct Chat Link:</span>
+                  <div className="flex items-center gap-1.5 bg-black/40 px-2.5 py-1.5 rounded-lg border border-gcs-border font-mono text-[10.5px] text-gcs-mint">
+                    <span className="truncate flex-1">{createdChatLink}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (createdChatLink) navigator.clipboard.writeText(createdChatLink);
+                        setChatLinkCopied(true);
+                        setTimeout(() => setChatLinkCopied(false), 2000);
+                      }}
+                      className="p-1 hover:text-white text-gcs-emerald transition-colors"
+                      title="Copy Chat Link"
+                    >
+                      {chatLinkCopied ? <Check className="w-3.5 h-3.5 text-gcs-mint" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {createdRegisterLink && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[11px] text-gcs-muted font-medium">User Login & Onboarding Link:</span>
+                  <div className="flex items-center gap-1.5 bg-black/40 px-2.5 py-1.5 rounded-lg border border-gcs-border font-mono text-[10.5px] text-gcs-mint">
+                    <span className="truncate flex-1">{createdRegisterLink}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (createdRegisterLink) navigator.clipboard.writeText(createdRegisterLink);
+                        setRegisterLinkCopied(true);
+                        setTimeout(() => setRegisterLinkCopied(false), 2000);
+                      }}
+                      className="p-1 hover:text-white text-gcs-emerald transition-colors"
+                      title="Copy Link"
+                    >
+                      {registerLinkCopied ? <Check className="w-3.5 h-3.5 text-gcs-mint" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1088,6 +1393,124 @@ export default function AdminDashboardPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* ==================================================================== */}
+      {/* MODAL 3: GENERATE ONBOARDING INVITATION LINK */}
+      {/* ==================================================================== */}
+      <Modal
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
+        title="Generate Onboarding & Chat Invitation"
+        description="Create a secure cryptographic invitation link for new team members to register and join chats."
+      >
+        <form onSubmit={handleGenerateInvite} className="space-y-4">
+          {inviteError && (
+            <div className="p-3 rounded-xl bg-[#D94D55]/15 border border-[#D94D55]/40 text-[#ff8e95] text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{inviteError}</span>
+            </div>
+          )}
+
+          {generatedInviteLink && (
+            <div className="p-3.5 rounded-xl bg-gcs-emerald/15 border border-gcs-emerald/40 text-gcs-mint text-xs flex flex-col gap-2.5">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-gcs-emerald" />
+                <span className="font-semibold">Invitation Generated Successfully!</span>
+              </div>
+
+              {/* Onboarding Register Link */}
+              <div className="flex flex-col gap-1.5 pt-2 border-t border-gcs-emerald/30">
+                <span className="text-[11px] text-gcs-muted font-medium">Onboarding Registration Link:</span>
+                <div className="flex items-center gap-1.5 bg-black/40 px-2.5 py-1.5 rounded-lg border border-gcs-border font-mono text-[10.5px] text-gcs-mint">
+                  <span className="truncate flex-1">{generatedInviteLink}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (generatedInviteLink) navigator.clipboard.writeText(generatedInviteLink);
+                      setInviteCopied(true);
+                      setTimeout(() => setInviteCopied(false), 2000);
+                    }}
+                    className="p-1 hover:text-white text-gcs-emerald transition-colors"
+                    title="Copy Invitation Link"
+                  >
+                    {inviteCopied ? <Check className="w-3.5 h-3.5 text-gcs-mint" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Direct Chat Link */}
+              {inviteEmail && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[11px] text-gcs-muted font-medium">Direct Chat Link (Once Registered):</span>
+                  <div className="flex items-center gap-1.5 bg-black/40 px-2.5 py-1.5 rounded-lg border border-gcs-border font-mono text-[10.5px] text-gcs-mint">
+                    <span className="truncate flex-1">
+                      {typeof window !== 'undefined' ? `${window.location.origin}/?chatWith=${encodeURIComponent(inviteEmail)}` : `/?chatWith=${encodeURIComponent(inviteEmail)}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const link = typeof window !== 'undefined' ? `${window.location.origin}/?chatWith=${encodeURIComponent(inviteEmail)}` : `/?chatWith=${encodeURIComponent(inviteEmail)}`;
+                        navigator.clipboard.writeText(link);
+                        setInviteChatCopied(true);
+                        setTimeout(() => setInviteChatCopied(false), 2000);
+                      }}
+                      className="p-1 hover:text-white text-gcs-emerald transition-colors"
+                      title="Copy Chat Link"
+                    >
+                      {inviteChatCopied ? <Check className="w-3.5 h-3.5 text-gcs-mint" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-gcs-muted">Recipient Corporate Email</label>
+            <Input
+              type="email"
+              required
+              placeholder="colleague@globalcrestsolutions.com"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-gcs-muted">Designated Role</label>
+            <select
+              value={inviteRole}
+              onChange={(e) => setInviteRole(e.target.value as any)}
+              className="w-full px-3 py-2 text-xs bg-gcs-bg border border-gcs-border rounded-xl text-gcs-text focus:outline-none focus:border-gcs-emerald"
+            >
+              <option value="USER">Standard User</option>
+              <option value="SECURITY_AUDITOR">Security Auditor</option>
+              <option value="ADMIN">System Administrator</option>
+            </select>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-gcs-border/60">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setIsInviteModalOpen(false)}
+            >
+              Close
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={inviteLoading}
+              className="bg-gcs-emerald hover:bg-[#00c28c] flex items-center gap-1.5"
+            >
+              {inviteLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
+              Generate Link
+            </Button>
+          </div>
+        </form>
       </Modal>
     </div>
   );
