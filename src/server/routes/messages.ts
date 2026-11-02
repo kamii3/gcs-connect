@@ -161,6 +161,7 @@ router.post('/conversations/:id/messages', authenticate, async (req: Request, re
           },
           receipts: true,
           reactions: true,
+          attachments: true,
         },
       });
 
@@ -273,6 +274,7 @@ router.get('/conversations/:id/messages', authenticate, async (req: Request, res
         },
         receipts: true,
         reactions: true,
+        attachments: true,
       },
     });
 

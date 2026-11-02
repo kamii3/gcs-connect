@@ -4,9 +4,15 @@
   "private": true,
   "description": "GCS CONNECT — Secure End-to-End Encrypted Messaging & Real-Time Communications Platform",
   "main": "server.js",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build:server": "prisma generate && (npx prisma db push --skip-generate || true) && node scripts/build-server.js && next build",
+    "build": "prisma generate && (npx prisma db push --skip-generate || true) && node scripts/build-server.js && next build",
+    "package:hostinger": "bash scripts/package-hostinger.sh",
+    "postinstall": "prisma generate",
     "start": "node server.js",
     "start:standalone": "next start",
     "start:all": "bash scripts/start-all.sh",
@@ -32,14 +38,15 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
+    "esbuild": "^0.28.1",
     "express": "^4.21.2",
     "framer-motion": "^12.4.7",
     "helmet": "^8.0.0",
     "idb": "^8.0.2",
     "jose": "^5.9.6",
     "lucide-react": "^1.42.0",
-    "next": "^14.2.35",
-    "postcss": "^8.5.3",
+    "next": "^15.5.28",
+    "postcss": "^8.5.23",
     "prisma": "^5.22.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -49,11 +56,16 @@
     "tailwindcss": "^3.4.17",
     "tsx": "^4.19.3",
     "typescript": "^5.7.3",
-    "zod": "^3.24.2"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/supertest": "^7.2.1",
     "supertest": "^7.3.1",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.12"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1",
+    "postcss": "^8.5.23",
+    "tinypool": "^2.1.2"
   }
 }

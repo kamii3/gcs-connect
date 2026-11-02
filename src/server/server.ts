@@ -183,17 +183,78 @@ io.on('connection', async (socket) => {
   });
 });
 
-// 4. Server Startup
-if (process.env.NODE_ENV !== 'test' && !process.env.UNIFIED_SERVER) {
-  server.listen(PORT, HOST, () => {
+import { prisma } from '../lib/db';
+import { hashPassword } from '../lib/auth-crypto';
+
+async function bootstrapDatabase() {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    console.log('[Database] Verifying database connectivity...');
+    await prisma.$connect();
+    console.log('[Database] Connected to MySQL database successfully.');
+
+    const adminEmail = process.env.ADMIN_INITIAL_EMAIL || 'admin@globalcrestsolutions.com';
+    const adminPass = process.env.ADMIN_INITIAL_PASSWORD || 'Kamii@336';
+    const existing = await prisma.user.findUnique({ where: { email: adminEmail } });
+
+    if (!existing) {
+      console.log(`[Database] Bootstrapping initial administrator (${adminEmail})...`);
+      const passwordHash = await hashPassword(adminPass);
+      await prisma.user.create({
+        data: {
+          email: adminEmail,
+          passwordHash,
+          fullName: process.env.ADMIN_INITIAL_NAME || 'Global Crest Administrator',
+          displayName: 'System Admin',
+          status: 'ACTIVE',
+          roles: {
+            create: {
+              role: 'SUPER_ADMIN',
+              assignedBy: 'SYSTEM_BOOTSTRAP',
+            },
+          },
+        },
+      });
+      console.log(`[Database] ✓ Administrator bootstrap complete: ${adminEmail}`);
+    } else {
+      console.log(`[Database] ✓ Administrator account verified: ${adminEmail}`);
+    }
+  } catch (err: any) {
+    console.warn('[Database] Background bootstrap notice:', err.message);
+  }
+}
+
+export function startStandaloneApiServer() {
+  if (server.listening) return;
+  const API_PORT = parseInt(process.env.API_PORT || '3001', 10);
+  server.listen(API_PORT, '127.0.0.1', () => {
     console.log(`=======================================================`);
     console.log(` GCS CONNECT — Real-Time API & Signaling Server`);
     console.log(` "Connect Freely. Communicate Securely."`);
-    console.log(` Running on: http://${HOST}:${PORT}`);
-    console.log(` Healthcheck: http://${HOST}:${PORT}/api/health`);
+    console.log(` Running on: http://127.0.0.1:${API_PORT}`);
+    console.log(` Healthcheck: http://127.0.0.1:${API_PORT}/api/health`);
     console.log(` Allowed Origins: ${APP_URL}`);
     console.log(`=======================================================`);
+
+    bootstrapDatabase().catch((dbErr) => {
+      console.error('[DatabaseBootstrap] Notice:', dbErr.message);
+    });
   });
+}
+
+// 4. Server Startup (only auto-start if executed directly as standalone API server)
+const isStandaloneApi = Boolean(
+  process.env.STANDALONE_API === 'true' ||
+    (typeof process !== 'undefined' &&
+      process.argv[1] &&
+      (process.argv[1].endsWith('/src/server/server.ts') ||
+        process.argv[1].endsWith('/src/server/server.js') ||
+        process.argv[1].endsWith('\\src\\server\\server.ts') ||
+        process.argv[1].endsWith('\\src\\server\\server.js')))
+);
+
+if (process.env.NODE_ENV !== 'test' && isStandaloneApi) {
+  startStandaloneApiServer();
 }
 
 // 5. Graceful Shutdown

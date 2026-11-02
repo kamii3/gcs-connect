@@ -70,14 +70,13 @@ export const Avatar: React.FC<AvatarProps> = ({
         )}
       </div>
 
-      {status !== 'none' && (
+      {status === 'online' && (
         <span
           className={cn(
-            'absolute bottom-0 right-0 rounded-full border-gcs-bg',
-            badgeSizes[size],
-            statusColors[status]
+            'absolute bottom-0 right-0 rounded-full border-gcs-bg bg-gcs-emerald shadow-xs',
+            badgeSizes[size]
           )}
-          aria-label={`Status: ${status}`}
+          aria-label="Status: online"
         />
       )}
     </div>

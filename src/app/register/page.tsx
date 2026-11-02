@@ -111,12 +111,12 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-gcs-bg px-4 py-8 font-sans">
+    <div className="min-h-[100dvh] w-screen flex flex-col items-center justify-center bg-gcs-bg px-3.5 sm:px-4 py-6 sm:py-8 font-sans safe-top safe-bottom">
       {/* Background Ambience */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[350px] bg-gcs-emerald/5 blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] sm:w-[500px] h-[350px] bg-gcs-emerald/5 blur-[100px] sm:blur-[120px] rounded-full pointer-events-none" />
 
       {/* Main Container */}
-      <div className="relative w-full max-w-md bg-gcs-card border border-gcs-border rounded-2xl shadow-2xl p-6 sm:p-8 animate-fade-in">
+      <div className="relative w-full max-w-md bg-gcs-card border border-gcs-border rounded-2xl shadow-2xl p-5 sm:p-8 animate-fade-in">
         {/* Header Branding */}
         <div className="flex flex-col items-center text-center mb-6">
           <div className="h-14 w-14 rounded-2xl bg-gcs-emerald/15 border border-gcs-emerald/30 flex items-center justify-center text-gcs-mint mb-3 shadow-inner">

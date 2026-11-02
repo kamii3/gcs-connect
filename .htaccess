@@ -1,0 +1,21 @@
+# ==============================================================================
+# Hostinger LiteSpeed + Phusion Passenger Configuration for GCS CONNECT
+# ==============================================================================
+
+<IfModule mod_passenger.c>
+    PassengerAppType node
+    PassengerStartupFile server.js
+    PassengerBaseURI /
+    SetEnv NODE_ENV production
+    SetEnv LSNODE_CONSOLE_LOG console.log
+</IfModule>
+
+# Security: Prevent raw directory listings
+Options -Indexes
+
+# Fallback Routing
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+</IfModule>

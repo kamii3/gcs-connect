@@ -47,7 +47,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             disabled={disabled}
             className={cn(
-              'w-full bg-gcs-card text-gcs-text border border-gcs-border rounded-lg text-sm transition-all duration-150',
+              'w-full bg-gcs-card text-gcs-text border border-gcs-border rounded-lg text-base sm:text-sm transition-all duration-150',
               'placeholder:text-gcs-muted/60 focus:outline-none focus:border-gcs-emerald focus:ring-1 focus:ring-gcs-emerald',
               'disabled:opacity-50 disabled:cursor-not-allowed',
               leftIcon ? 'pl-9.5' : 'pl-3.5',

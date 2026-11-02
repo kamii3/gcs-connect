@@ -13,7 +13,16 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Avatar } from '../components/ui/Avatar';
 import { useToast } from '../components/ui/Toast';
-import { encryptAESGCM, decryptAESGCM } from '../lib/crypto';
+import {
+  encryptAESGCM,
+  decryptAESGCM,
+  encryptMediaBuffer,
+  decryptMediaBuffer,
+  bufferToBase64,
+} from '../lib/crypto';
+import { realtimeSocket } from '../lib/socket/client';
+import { playSound } from '../lib/audio';
+import { cn } from '../lib/utils';
 import {
   ShieldCheck,
   Lock,
@@ -67,6 +76,7 @@ export default function AppHome() {
   const [messages, setMessages] = useState<MessageProps[]>([]);
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
 
   // WhatsApp-Style "New Chat" Contact Picker Modal State
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
@@ -97,25 +107,57 @@ export default function AppHome() {
         if (!res.ok) return;
         const data = await res.json();
         if (data.success && Array.isArray(data.conversations)) {
-          const formatted: ConversationItem[] = data.conversations.map((c: any) => ({
-            id: c.id,
-            name: c.title || 'Encrypted Direct Chat',
-            avatarSrc: c.avatarUrl,
-            status: 'online',
-            lastMessage: c.latestMessage
-              ? c.latestMessage.isDeletedForEveryone
-                ? 'This message was deleted'
-                : 'Encrypted message'
-              : 'No messages yet',
-            lastMessageTime: c.latestMessage ? c.latestMessage.createdAt : c.updatedAt,
-            lastMessageStatus: c.latestMessage?.isFromMe ? 'read' : undefined,
-            unreadCount: c.unreadCount || 0,
-            isPinned: c.isPinned || false,
-            isMuted: c.isMuted || false,
-            isGroup: c.type === 'GROUP',
-          }));
+          const peerIds: string[] = [];
+          const formatted: ConversationItem[] = data.conversations.map((c: any) => {
+            const peer = (c.members || []).find((m: any) => m.userId !== currentUser?.id);
+            const peerUserId = peer?.userId;
+            if (peerUserId) peerIds.push(peerUserId);
+
+            let lastMsgText = 'No messages yet';
+            if (c.latestMessage) {
+              if (c.latestMessage.isDeletedForEveryone) {
+                lastMsgText = 'This message was deleted';
+              } else if (c.latestMessage.messageType === 'IMAGE') {
+                lastMsgText = '📷 Photo';
+              } else if (c.latestMessage.messageType === 'VIDEO') {
+                lastMsgText = '🎥 Video';
+              } else if (c.latestMessage.messageType === 'DOCUMENT') {
+                lastMsgText = '📄 Document';
+              } else {
+                lastMsgText = 'Encrypted message';
+              }
+            }
+
+            return {
+              id: c.id,
+              name: c.title || 'Encrypted Direct Chat',
+              avatarSrc: c.avatarUrl,
+              peerUserId,
+              status: 'offline', // dynamic in displayConversations
+              lastMessage: lastMsgText,
+              lastMessageTime: c.latestMessage ? c.latestMessage.createdAt : c.updatedAt,
+              lastMessageStatus: c.latestMessage?.isFromMe ? 'sent' : undefined,
+              unreadCount: c.unreadCount || 0,
+              isPinned: c.isPinned || false,
+              isMuted: c.isMuted || false,
+              isGroup: c.type === 'GROUP',
+            };
+          });
 
           setConversations(formatted);
+
+          // Query presence of peers
+          if (peerIds.length > 0) {
+            realtimeSocket.queryPresence(peerIds).then((onlineList) => {
+              if (Array.isArray(onlineList) && onlineList.length > 0) {
+                setOnlineUserIds((prev) => {
+                  const updated = new Set(prev);
+                  onlineList.forEach((uid) => updated.add(uid));
+                  return updated;
+                });
+              }
+            });
+          }
 
           // Priority 1: Match preferred email / chatWith query
           if (preferredEmail) {
@@ -137,10 +179,14 @@ export default function AppHome() {
             }
           }
 
-          // Priority 3: Keep existing selection or select first
+          // Priority 3: Keep existing selection, or on desktop select first
           setActiveId((prev) => {
             if (prev && formatted.some((c) => c.id === prev)) {
               return prev;
+            }
+            // On mobile viewports, default to the conversation list so users aren't trapped in a chat
+            if (typeof window !== 'undefined' && window.innerWidth < 768) {
+              return '';
             }
             return formatted.length > 0 ? formatted[0].id : '';
           });
@@ -149,7 +195,7 @@ export default function AppHome() {
         console.error('Failed to load conversations:', err);
       }
     },
-    []
+    [currentUser?.id]
   );
 
   // Check login status on page mount
@@ -223,6 +269,138 @@ export default function AppHome() {
     }
   }, [isNewChatModalOpen]);
 
+  // Real-Time Socket Connection & Event Handling
+  useEffect(() => {
+    if (!currentUser) return;
+
+    realtimeSocket.connect('', undefined);
+
+    const unsubPresence = realtimeSocket.onPresence(({ userId, status }) => {
+      setOnlineUserIds((prev) => {
+        const next = new Set(prev);
+        if (status === 'ONLINE') {
+          next.add(userId);
+        } else {
+          next.delete(userId);
+        }
+        return next;
+      });
+    });
+
+    const unsubReceipt = realtimeSocket.onReceipt((receipt: any) => {
+      if (!receipt) return;
+      const receiptStatus = receipt.status === 'READ' ? 'read' : 'delivered';
+
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id === receipt.messageId && m.isSentByMe) {
+            return { ...m, status: receiptStatus };
+          }
+          return m;
+        })
+      );
+
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id === receipt.conversationId) {
+            return { ...c, lastMessageStatus: receiptStatus };
+          }
+          return c;
+        })
+      );
+    });
+
+    const unsubMessage = realtimeSocket.onMessage(async (msg: any) => {
+      if (!msg) return;
+
+      if (msg.conversationId === activeId) {
+        let text = 'Encrypted message';
+        let attachmentObj: any = undefined;
+
+        if (msg.isDeletedForEveryone) {
+          text = 'This message was deleted';
+        } else {
+          try {
+            const key = await getConversationKey(msg.conversationId);
+            text = await decryptAESGCM(
+              key,
+              msg.encryptedPayload,
+              msg.initializationVector,
+              msg.authTag
+            );
+          } catch {
+            text = 'Encrypted message';
+          }
+
+          if (text.startsWith('{"type":"MEDIA"') || text.startsWith('{"mediaKey"')) {
+            try {
+              const parsed = JSON.parse(text);
+              attachmentObj = {
+                id: msg.id,
+                fileName: parsed.fileName || 'Encrypted File',
+                fileSizeBytes: parsed.fileSizeBytes,
+                mimeType: parsed.mimeType || 'application/octet-stream',
+              };
+              text = '';
+            } catch {}
+          }
+        }
+
+        const isMe = msg.sender?.id === currentUser.id;
+        const newMsg: MessageProps = {
+          id: msg.id,
+          senderName: msg.sender?.fullName || 'User',
+          content: text,
+          timestamp: new Date(msg.createdAt).getTime(),
+          isSentByMe: isMe,
+          status: 'delivered',
+          isEncrypted: true,
+          isDeletedForEveryone: msg.isDeletedForEveryone,
+          attachment: attachmentObj,
+        };
+
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          return [...prev, newMsg];
+        });
+
+        // Send READ receipt
+        if (!isMe) {
+          playSound('received');
+          fetch(`/api/messages/${msg.id}/receipt`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'READ' }),
+          }).catch(() => {});
+        }
+      } else {
+        if (msg.sender?.id !== currentUser.id) {
+          playSound('received');
+          fetch(`/api/messages/${msg.id}/receipt`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'DELIVERED' }),
+          }).catch(() => {});
+        }
+      }
+
+      loadConversations(activeId);
+    });
+
+    return () => {
+      unsubPresence();
+      unsubReceipt();
+      unsubMessage();
+    };
+  }, [currentUser, activeId, loadConversations]);
+
+  // Join active conversation room for real-time delivery
+  useEffect(() => {
+    if (activeId) {
+      realtimeSocket.joinConversation(activeId);
+    }
+  }, [activeId]);
+
   // Fetch and decrypt messages when activeId changes
   useEffect(() => {
     if (!activeId) {
@@ -231,7 +409,6 @@ export default function AppHome() {
     }
 
     // Immediately clear unread count for this conversation in UI
-    // (This dynamically removes it from the 'unread' tab filter)
     setConversations((prev) =>
       prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c))
     );
@@ -247,6 +424,8 @@ export default function AppHome() {
           const loaded = await Promise.all(
             data.messages.map(async (m: any) => {
               let text = 'Encrypted message';
+              let attachmentObj: any = undefined;
+
               if (m.isDeletedForEveryone) {
                 text = 'This message was deleted';
               } else {
@@ -260,6 +439,47 @@ export default function AppHome() {
                   );
                 } catch {
                   text = m.encryptedPayload || 'Encrypted message';
+                }
+
+                if (text.startsWith('{"type":"MEDIA"') || text.startsWith('{"mediaKey"')) {
+                  try {
+                    const parsed = JSON.parse(text);
+                    const attachmentRecord = m.attachments?.[0];
+                    const attId = attachmentRecord?.id || m.id;
+
+                    attachmentObj = {
+                      id: attId,
+                      fileName: parsed.fileName || 'Encrypted File',
+                      fileSizeBytes: parsed.fileSizeBytes,
+                      mimeType: parsed.mimeType || 'application/octet-stream',
+                    };
+
+                    // Auto-decrypt image, video, or documents for inline viewing/download
+                    if (attachmentRecord?.id) {
+                      try {
+                        const mediaRes = await fetch(`/api/media/${attachmentRecord.id}`);
+                        if (mediaRes.ok) {
+                          const cipherBuffer = await mediaRes.arrayBuffer();
+                          const decryptedBuffer = await decryptMediaBuffer(cipherBuffer, {
+                            mediaKey: parsed.mediaKey,
+                            iv: parsed.iv,
+                            authTag: parsed.authTag,
+                            ciphertextSha256: parsed.ciphertextSha256,
+                          });
+                          const blob = new Blob([decryptedBuffer], {
+                            type: parsed.mimeType || 'application/octet-stream',
+                          });
+                          attachmentObj.url = URL.createObjectURL(blob);
+                        }
+                      } catch (decErr) {
+                        console.warn('Failed to decrypt attachment:', decErr);
+                      }
+                    }
+
+                    text = '';
+                  } catch (e) {
+                    console.error('Failed to parse media descriptor:', e);
+                  }
                 }
               }
 
@@ -293,6 +513,7 @@ export default function AppHome() {
                 status,
                 isEncrypted: true,
                 isDeletedForEveryone: m.isDeletedForEveryone,
+                attachment: attachmentObj,
                 reactions:
                   m.reactions?.map((r: any) => ({
                     emoji: r.emoji,
@@ -319,7 +540,23 @@ export default function AppHome() {
     };
   }, [activeId, currentUser?.id]);
 
-  const activeContact = conversations.find((c) => c.id === activeId);
+  const displayConversations = conversations.map((conv) => {
+    const isOnline = conv.peerUserId ? onlineUserIds.has(conv.peerUserId) : false;
+    return {
+      ...conv,
+      status: (isOnline ? 'online' : 'offline') as 'online' | 'offline',
+    };
+  });
+
+  const rawActiveContact = conversations.find((c) => c.id === activeId);
+  const activeContact = rawActiveContact
+    ? {
+        ...rawActiveContact,
+        status: (rawActiveContact.peerUserId && onlineUserIds.has(rawActiveContact.peerUserId)
+          ? 'online'
+          : 'offline') as 'online' | 'offline',
+      }
+    : undefined;
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -399,10 +636,12 @@ export default function AppHome() {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch {}
+    realtimeSocket.disconnect();
     setCurrentUser(null);
     setConversations([]);
     setMessages([]);
     setActiveId('');
+    setOnlineUserIds(new Set());
     toast({ type: 'info', message: 'You have been signed out.' });
   };
 
@@ -438,6 +677,7 @@ export default function AppHome() {
 
       const data = await res.json();
       if (res.ok && data.message) {
+        playSound('sent');
         setMessages((prev) =>
           prev.map((m) =>
             m.id === tempId ? { ...m, id: data.message.id, status: 'sent' } : m
@@ -459,6 +699,132 @@ export default function AppHome() {
       }
     } catch (err) {
       console.error('Failed to send encrypted message:', err);
+    }
+  };
+
+  // Dispatch client-side encrypted media attachment (photos, videos, documents)
+  const handleSendFile = async (file: File) => {
+    if (!file || !activeId) return;
+
+    if (file.size > 50 * 1024 * 1024) {
+      toast({
+        type: 'error',
+        message: 'File size exceeds maximum encrypted limit (50MB).',
+      });
+      return;
+    }
+
+    const tempId = `temp-file-${Date.now()}`;
+    const localBlobUrl = URL.createObjectURL(file);
+
+    const optimisticMsg: MessageProps = {
+      id: tempId,
+      content: '',
+      timestamp: Date.now(),
+      isSentByMe: true,
+      status: 'sending',
+      isEncrypted: true,
+      attachment: {
+        id: tempId,
+        fileName: file.name,
+        fileSizeBytes: file.size,
+        mimeType: file.type || 'application/octet-stream',
+        url: localBlobUrl,
+      },
+    };
+    setMessages((prev) => [...prev, optimisticMsg]);
+
+    try {
+      // 1. Client-Side AES-256-GCM encryption of file
+      const arrayBuf = await file.arrayBuffer();
+      const mediaPackage = await encryptMediaBuffer(
+        new Uint8Array(arrayBuf),
+        file.type || 'application/octet-stream',
+        file.name
+      );
+
+      // 2. Encrypt descriptor with conversation key
+      const key = await getConversationKey(activeId);
+      const descriptorJson = JSON.stringify({
+        type: 'MEDIA',
+        ...mediaPackage.mediaDescriptor,
+      });
+      const { ciphertext, iv, authTag } = await encryptAESGCM(key, descriptorJson);
+
+      const messageType = file.type.startsWith('image/')
+        ? 'IMAGE'
+        : file.type.startsWith('video/')
+        ? 'VIDEO'
+        : 'DOCUMENT';
+
+      // 3. Post message to /api/conversations/:id/messages
+      const res = await fetch(`/api/conversations/${activeId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messageType,
+          encryptedPayload: ciphertext,
+          initializationVector: iv,
+          authTag: authTag,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.message) {
+        toast({ type: 'error', message: 'Failed to create message record.' });
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        return;
+      }
+
+      const realMessageId = data.message.id;
+
+      // 4. Upload ciphertext to /api/media/upload
+      const uploadRes = await fetch('/api/media/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messageId: realMessageId,
+          ciphertextBase64: bufferToBase64(mediaPackage.ciphertextBuffer),
+          encryptedMimeType: bufferToBase64(
+            new TextEncoder().encode(file.type || 'application/octet-stream')
+          ),
+          ciphertextSha256: mediaPackage.ciphertextSha256,
+        }),
+      });
+
+      const uploadData = await uploadRes.json();
+      if (!uploadRes.ok) {
+        toast({ type: 'error', message: 'Failed to upload encrypted file bytes.' });
+      }
+
+      // 5. Update local message with real ID and sent status
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId
+            ? {
+                ...m,
+                id: realMessageId,
+                status: 'sent',
+                attachment: {
+                  ...m.attachment!,
+                  id: uploadData.attachment?.id || realMessageId,
+                },
+              }
+            : m
+        )
+      );
+
+      playSound('sent');
+      toast({
+        type: 'success',
+        message: `${file.name} encrypted and sent securely!`,
+      });
+
+      loadConversations(activeId);
+    } catch (err: any) {
+      console.error('Failed to send file:', err);
+      toast({ type: 'error', message: err.message || 'Failed to send file.' });
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
     }
   };
 
@@ -622,12 +988,14 @@ export default function AppHome() {
   };
 
   const startCall = (type: 'voice' | 'video') => {
+    playSound('ringtone');
     setCallState({
       isOpen: true,
       callType: type,
       status: 'outgoing',
     });
     setTimeout(() => {
+      playSound('call_connect');
       setCallState((prev) => ({ ...prev, status: 'connected' }));
       toast({
         type: 'info',
@@ -639,7 +1007,7 @@ export default function AppHome() {
   // 1. Loading State
   if (isAuthLoading) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-gcs-bg font-sans">
+      <div className="h-[100dvh] w-screen flex flex-col items-center justify-center bg-gcs-bg font-sans safe-top safe-bottom">
         <div className="h-10 w-10 rounded-xl bg-gcs-emerald/20 border border-gcs-emerald/40 flex items-center justify-center animate-spin mb-3">
           <ShieldCheck className="w-6 h-6 text-gcs-emerald" />
         </div>
@@ -651,10 +1019,10 @@ export default function AppHome() {
   // 2. Authentication Gate: User MUST login before seeing the chat dashboard
   if (!currentUser) {
     return (
-      <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-gcs-bg px-4 py-8 font-sans">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[450px] h-[350px] bg-gcs-emerald/5 blur-[120px] rounded-full pointer-events-none" />
+      <div className="min-h-[100dvh] w-screen flex flex-col items-center justify-center bg-gcs-bg px-3.5 sm:px-4 py-6 sm:py-8 font-sans safe-top safe-bottom">
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] sm:w-[450px] h-[350px] bg-gcs-emerald/5 blur-[100px] sm:blur-[120px] rounded-full pointer-events-none" />
 
-        <div className="relative w-full max-w-sm bg-gcs-card border border-gcs-border rounded-2xl shadow-2xl p-6 sm:p-7 animate-fade-in">
+        <div className="relative w-full max-w-sm bg-gcs-card border border-gcs-border rounded-2xl shadow-2xl p-5 sm:p-7 animate-fade-in">
           {/* Header */}
           <div className="flex flex-col items-center text-center mb-5">
             <div className="h-12 w-12 rounded-2xl bg-gcs-emerald/15 border border-gcs-emerald/30 flex items-center justify-center text-gcs-mint mb-3 shadow-inner">
@@ -821,25 +1189,39 @@ export default function AppHome() {
 
   // 3. Authenticated Workplace View (WhatsApp-Style Structure)
   return (
-    <main className="h-screen w-screen flex overflow-hidden bg-gcs-bg font-sans">
-      {/* Sidebar Navigation */}
-      <Sidebar
-        conversations={conversations}
-        activeConversationId={activeId}
-        onSelectConversation={(id) => {
-          setActiveId(id);
-        }}
-        onDeleteConversation={handleDeleteConversation}
-        onNewChat={() => setIsNewChatModalOpen(true)}
-        onOpenSettings={() => setShowDrawer(true)}
-        currentUserName={currentUser.fullName || currentUser.email}
-        currentUserEmail={currentUser.email}
-      />
+    <main className="h-[100dvh] w-screen flex overflow-hidden bg-gcs-bg font-sans safe-bottom">
+      {/* Sidebar Navigation: full width on mobile when no conversation is active; fixed width on desktop */}
+      <div
+        className={cn(
+          'h-full shrink-0',
+          activeContact && activeId
+            ? 'hidden md:flex md:w-80 lg:w-96'
+            : 'w-full md:w-80 lg:w-96 flex'
+        )}
+      >
+        <Sidebar
+          conversations={displayConversations}
+          activeConversationId={activeId}
+          onSelectConversation={(id) => {
+            setActiveId(id);
+          }}
+          onDeleteConversation={handleDeleteConversation}
+          onNewChat={() => setIsNewChatModalOpen(true)}
+          onOpenSettings={() => setShowDrawer(true)}
+          currentUserName={currentUser.fullName || currentUser.email}
+          currentUserEmail={currentUser.email}
+        />
+      </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-full bg-gcs-bg min-w-0">
-        {/* Top Header Bar */}
-        <div className="h-10 px-4 bg-gcs-bg border-b border-gcs-border/40 flex items-center justify-between text-xs select-none">
+      {/* Main Content Area: full width on mobile when conversation is active; hidden on mobile when viewing chat list */}
+      <div
+        className={cn(
+          'flex-1 flex-col h-full bg-gcs-bg min-w-0',
+          activeContact && activeId ? 'flex w-full' : 'hidden md:flex'
+        )}
+      >
+        {/* Top Header Bar (Desktop Only - hidden on mobile to maximize chat viewport) */}
+        <div className="hidden md:flex h-10 px-4 bg-gcs-bg border-b border-gcs-border/40 items-center justify-between text-xs select-none shrink-0">
           <div className="flex items-center gap-2.5">
             <span className="flex items-center gap-1.5 text-gcs-mint font-medium text-[11px]">
               <ShieldCheck className="w-3.5 h-3.5 text-gcs-emerald" />
@@ -851,7 +1233,7 @@ export default function AppHome() {
             <button
               type="button"
               onClick={() => setIsNewChatModalOpen(true)}
-              className="flex items-center gap-1 text-[11px] text-gcs-mint hover:underline font-medium"
+              className="flex items-center gap-1 text-[11px] text-gcs-mint hover:underline font-medium cursor-pointer"
             >
               <UserPlus className="w-3 h-3" />
               <span>New Chat</span>
@@ -862,7 +1244,7 @@ export default function AppHome() {
             <button
               type="button"
               onClick={handleLogout}
-              className="flex items-center gap-1 text-[11px] text-gcs-muted hover:text-red-400 transition-colors"
+              className="flex items-center gap-1 text-[11px] text-gcs-muted hover:text-red-400 transition-colors cursor-pointer"
               title="Sign Out"
             >
               <LogOut className="w-3 h-3" />
@@ -873,12 +1255,13 @@ export default function AppHome() {
 
         {/* Active Conversation Main Pane or WhatsApp-Style Empty State */}
         {activeContact && activeId ? (
-          <div className="flex-1 flex flex-col min-h-0">
-            {/* WhatsApp-Style Chat Header with 3-Dots Dropdown */}
+          <div className="flex-1 flex flex-col min-h-0 w-full">
+            {/* WhatsApp-Style Chat Header with Mobile Back Button & 3-Dots Dropdown */}
             <ChatHeader
               contactName={activeContact.name}
               avatarSrc={activeContact.avatarSrc}
               status={activeContact.status}
+              onBack={() => setActiveId('')}
               onVoiceCall={() => startCall('voice')}
               onVideoCall={() => startCall('video')}
               onClearHistory={handleClearHistory}
@@ -893,11 +1276,11 @@ export default function AppHome() {
               onOpenDetails={() => setShowDrawer(true)}
             />
 
-            {/* Chat Messages Stream */}
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col justify-end space-y-1">
-              <div className="mx-auto my-3 px-3 py-1 rounded-full bg-gcs-card/80 border border-gcs-border/60 text-[11px] text-gcs-muted text-center max-w-sm flex items-center justify-center gap-1.5 shadow-sm">
-                <Lock className="w-3 h-3 text-gcs-emerald" />
-                <span>End-to-end encrypted with Web Crypto AES-256-GCM.</span>
+            {/* Chat Messages Stream with authentic WhatsApp doodle wallpaper */}
+            <div className="flex-1 overflow-y-auto p-2.5 sm:p-4 flex flex-col justify-end space-y-1 scroll-touch chat-doodle-bg">
+              <div className="mx-auto my-2 sm:my-3 px-3 py-1 rounded-full bg-gcs-card/80 border border-gcs-border/60 text-[10px] sm:text-[11px] text-gcs-muted text-center max-w-sm flex items-center justify-center gap-1.5 shadow-sm shrink-0">
+                <Lock className="w-3 h-3 text-gcs-emerald shrink-0" />
+                <span className="truncate">End-to-end encrypted with Web Crypto AES-256-GCM.</span>
               </div>
 
               {isMessagesLoading ? (
@@ -919,6 +1302,7 @@ export default function AppHome() {
             {/* Chat Input Bar */}
             <ChatInput
               onSendMessage={handleSendMessage}
+              onSendFile={handleSendFile}
               onSendVoiceNote={() =>
                 toast({
                   type: 'info',
@@ -1148,10 +1532,12 @@ export default function AppHome() {
         contactName={activeContact ? activeContact.name : 'Peer'}
         avatarSrc={activeContact ? activeContact.avatarSrc : undefined}
         onEndCall={() => {
+          playSound('call_hangup');
           setCallState((prev) => ({ ...prev, isOpen: false }));
           toast({ type: 'warning', message: 'Call ended' });
         }}
         onReject={() => {
+          playSound('call_hangup');
           setCallState((prev) => ({ ...prev, isOpen: false }));
           toast({ type: 'error', message: 'Call rejected' });
         }}

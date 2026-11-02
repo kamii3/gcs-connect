@@ -538,10 +538,10 @@ export default function AdminDashboardPage() {
 
   if (isAuthenticated === false) {
     return (
-      <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-gcs-bg px-4 py-8 font-sans">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[350px] bg-gcs-emerald/5 blur-[120px] rounded-full pointer-events-none" />
+      <div className="min-h-[100dvh] w-screen flex flex-col items-center justify-center bg-gcs-bg px-3.5 sm:px-4 py-6 sm:py-8 font-sans safe-top safe-bottom">
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] sm:w-[500px] h-[350px] bg-gcs-emerald/5 blur-[100px] sm:blur-[120px] rounded-full pointer-events-none" />
 
-        <div className="relative w-full max-w-md bg-gcs-card border border-gcs-border rounded-2xl shadow-2xl p-6 sm:p-8 animate-fade-in">
+        <div className="relative w-full max-w-md bg-gcs-card border border-gcs-border rounded-2xl shadow-2xl p-5 sm:p-8 animate-fade-in">
           {/* Header Branding */}
           <div className="flex flex-col items-center text-center mb-6">
             <div className="h-14 w-14 rounded-2xl bg-gcs-emerald/15 border border-gcs-emerald/30 flex items-center justify-center text-gcs-mint mb-3 shadow-inner">
@@ -625,9 +625,9 @@ export default function AdminDashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gcs-bg text-gcs-text flex flex-col font-sans">
+    <div className="min-h-[100dvh] bg-gcs-bg text-gcs-text flex flex-col font-sans safe-bottom">
       {/* Top Navigation Bar */}
-      <header className="border-b border-gcs-border bg-gcs-sidebar/95 backdrop-blur-md sticky top-0 z-30 px-6 py-4 flex items-center justify-between">
+      <header className="border-b border-gcs-border bg-gcs-sidebar/95 backdrop-blur-md sticky top-0 z-30 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gcs-emerald/20 border border-gcs-emerald/40 flex items-center justify-center shadow-lg shadow-gcs-emerald/10">
             <ShieldCheck className="w-5 h-5 text-gcs-emerald" />

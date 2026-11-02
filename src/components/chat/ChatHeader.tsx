@@ -3,13 +3,24 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
-import { Phone, Video, Search, MoreVertical, ShieldCheck, Trash2, Eraser, Info } from 'lucide-react';
+import {
+  Phone,
+  Video,
+  Search,
+  MoreVertical,
+  ShieldCheck,
+  Trash2,
+  Eraser,
+  Info,
+  ArrowLeft,
+} from 'lucide-react';
 
 export interface ChatHeaderProps {
   contactName: string;
   avatarSrc?: string | null;
   status: 'online' | 'offline' | 'away';
   statusText?: string;
+  onBack?: () => void;
   onVoiceCall?: () => void;
   onVideoCall?: () => void;
   onSearch?: () => void;
@@ -24,6 +35,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   avatarSrc,
   status,
   statusText,
+  onBack,
   onVoiceCall,
   onVideoCall,
   onSearch,
@@ -51,42 +63,63 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   }, [isDropdownOpen]);
 
   return (
-    <div className="h-16 px-4 bg-gcs-sidebar border-b border-gcs-border flex items-center justify-between select-none relative z-20">
-      {/* Contact Profile Summary */}
-      <div
-        className="flex items-center gap-3 cursor-pointer group"
-        onClick={onOpenDetails}
-      >
-        <Avatar
-          src={avatarSrc}
-          name={contactName}
-          size="md"
-          status={status}
-          className="group-hover:opacity-90"
-        />
-        <div className="flex flex-col text-left">
-          <div className="flex items-center gap-1.5">
-            <span className="text-sm font-semibold text-gcs-text leading-tight group-hover:text-gcs-mint transition-colors">
-              {contactName}
+    <div className="h-14 sm:h-16 px-2 sm:px-4 bg-gcs-sidebar border-b border-gcs-border flex items-center justify-between select-none relative z-20 shrink-0">
+      {/* Left Section: Back Button + Contact Summary */}
+      <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1 mr-2">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="md:hidden p-2 -ml-1 text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card active:scale-95 rounded-full transition-all shrink-0"
+            aria-label="Back to conversations"
+            title="Back to conversations"
+          >
+            <ArrowLeft className="w-5 h-5 text-gcs-mint" />
+          </button>
+        )}
+
+        <div
+          className="flex items-center gap-2 sm:gap-3 cursor-pointer group min-w-0 flex-1"
+          onClick={onOpenDetails}
+        >
+          <Avatar
+            src={avatarSrc}
+            name={contactName}
+            size="md"
+            status={status}
+            className="group-hover:opacity-90 shrink-0"
+          />
+          <div className="flex flex-col text-left min-w-0 flex-1">
+            <div className="flex items-center gap-1 sm:gap-1.5">
+              <span className="text-xs sm:text-sm font-semibold text-gcs-text leading-tight group-hover:text-gcs-mint transition-colors truncate">
+                {contactName}
+              </span>
+              <ShieldCheck
+                className="w-3.5 h-3.5 text-gcs-emerald shrink-0"
+                aria-label="Verified E2EE Session"
+              />
+            </div>
+            <span className="text-[10px] sm:text-xs text-gcs-muted truncate flex items-center gap-1.5">
+              {status === 'online' ? (
+                <>
+                  <span className="h-1.5 w-1.5 rounded-full bg-gcs-emerald shrink-0" />
+                  <span className="text-gcs-mint font-medium">Online</span>
+                </>
+              ) : (
+                <span>Offline</span>
+              )}
             </span>
-            <ShieldCheck
-              className="w-3.5 h-3.5 text-gcs-emerald"
-              aria-label="Verified E2EE Session"
-            />
           </div>
-          <span className="text-xs text-gcs-muted capitalize">
-            {statusText || (status === 'online' ? 'Online' : 'Offline')}
-          </span>
         </div>
       </div>
 
       {/* Action Buttons */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
         <Button
           variant="ghost"
           size="icon"
           onClick={onVoiceCall}
-          className="text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card"
+          className="h-8.5 w-8.5 sm:h-9 sm:w-9 text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card"
           aria-label="Start Voice Call"
           title="Voice Call"
         >
@@ -96,7 +129,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           variant="ghost"
           size="icon"
           onClick={onVideoCall}
-          className="text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card"
+          className="h-8.5 w-8.5 sm:h-9 sm:w-9 text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card"
           aria-label="Start Video Call"
           title="Video Call"
         >
@@ -106,7 +139,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           variant="ghost"
           size="icon"
           onClick={onSearch}
-          className="text-gcs-muted hover:text-gcs-text hover:bg-gcs-card"
+          className="hidden xs:flex h-8.5 w-8.5 sm:h-9 sm:w-9 text-gcs-muted hover:text-gcs-text hover:bg-gcs-card"
           aria-label="Search Messages"
           title="Search"
         >
@@ -119,7 +152,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
             variant="ghost"
             size="icon"
             onClick={() => setIsDropdownOpen((prev) => !prev)}
-            className="text-gcs-muted hover:text-gcs-text hover:bg-gcs-card"
+            className="h-8.5 w-8.5 sm:h-9 sm:w-9 text-gcs-muted hover:text-gcs-text hover:bg-gcs-card"
             aria-label="More Options"
             title="Menu"
           >
@@ -139,6 +172,20 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 >
                   <Info className="w-3.5 h-3.5 text-gcs-muted" />
                   <span>Contact info</span>
+                </button>
+              )}
+
+              {onSearch && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDropdownOpen(false);
+                    onSearch();
+                  }}
+                  className="xs:hidden px-3.5 py-2.5 text-left hover:bg-gcs-sidebar text-gcs-text flex items-center gap-2.5 transition-colors"
+                >
+                  <Search className="w-3.5 h-3.5 text-gcs-muted" />
+                  <span>Search messages</span>
                 </button>
               )}
 

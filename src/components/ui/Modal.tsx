@@ -55,48 +55,48 @@ export const Modal: React.FC<ModalProps> = ({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2.5 sm:p-4 bg-black/80 backdrop-blur-sm animate-fade-in safe-bottom"
       onClick={onClose}
     >
       <div
         className={cn(
-          'w-full bg-gcs-card border border-gcs-border rounded-2xl shadow-card overflow-hidden flex flex-col animate-slide-up',
+          'w-full bg-gcs-card border border-gcs-border rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-slide-up max-h-[90dvh]',
           maxWidths[maxWidth],
           className
         )}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between p-5 border-b border-gcs-border/60">
-          <div>
+        <div className="flex items-start justify-between p-4 sm:p-5 border-b border-gcs-border/60 shrink-0">
+          <div className="pr-2">
             {title && (
-              <h3 className="text-base font-semibold text-gcs-text leading-tight">
+              <h3 className="text-sm sm:text-base font-semibold text-gcs-text leading-tight">
                 {title}
               </h3>
             )}
             {description && (
-              <p className="text-xs text-gcs-muted mt-1">{description}</p>
+              <p className="text-[11px] sm:text-xs text-gcs-muted mt-1 leading-normal">{description}</p>
             )}
           </div>
           <Button
             variant="ghost"
             size="icon"
             onClick={onClose}
-            className="text-gcs-muted hover:text-gcs-text -mr-1 -mt-1 h-8 w-8"
+            className="text-gcs-muted hover:text-gcs-text -mr-1 -mt-1 h-9 w-9 rounded-full shrink-0"
             aria-label="Close dialog"
           >
-            <X className="w-4 h-4" />
+            <X className="w-4.5 h-4.5" />
           </Button>
         </div>
 
         {/* Content Body */}
-        <div className="p-5 overflow-y-auto max-h-[70vh] text-sm text-gcs-text">
+        <div className="p-4 sm:p-5 overflow-y-auto text-sm text-gcs-text scroll-touch">
           {children}
         </div>
 
         {/* Footer */}
         {footer && (
-          <div className="flex items-center justify-end gap-2.5 p-4 border-t border-gcs-border/60 bg-gcs-sidebar/40">
+          <div className="flex items-center justify-end gap-2.5 p-3.5 sm:p-4 border-t border-gcs-border/60 bg-gcs-sidebar/40 shrink-0">
             {footer}
           </div>
         )}

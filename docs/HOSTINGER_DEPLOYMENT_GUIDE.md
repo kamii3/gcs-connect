@@ -1,6 +1,8 @@
-# GCS CONNECT — Hostinger VPS Production Deployment Guide
-**Document Version:** 1.0.0  
-**Target Environment:** Hostinger KVM VPS (Ubuntu 22.04 / 24.04 LTS)  
+# GCS CONNECT — Hostinger Production Deployment Guide
+**Document Version:** 2.0.0
+**Target Environments:**
+1. **Hostinger Cloud / Web Hosting** (Cloud Startup / Business plans via hPanel Node.js Application Manager)
+2. **Hostinger KVM VPS** (Ubuntu 22.04 / 24.04 LTS with Nginx + Systemd)
 **Security Standard:** Zero Plaintext Architecture & OWASP ASVS 5.0.0 Level 2/3  
 **Platform:** Next.js 14 + Node.js / Express + Socket.IO + MariaDB / MySQL 8+ + WebRTC  
 
@@ -8,6 +10,34 @@
 
 ## 1. System Architecture Overview
 
+### Option A: Hostinger Cloud Hosting (hPanel Unified Server)
+```
+                          Internet (HTTPS / WSS)
+                                    │
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │  Hostinger LiteSpeed Server   │
+                    │   - SSL Termination & CDN     │
+                    │   - Phusion Passenger Engine  │
+                    └───────────────┬───────────────┘
+                                    │
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │     Unified Node.js App       │
+                    │       (Entry: server.js)      │
+                    │  - Next.js 14 Frontend SSR    │
+                    │  - Express REST API (/api/*)  │
+                    │  - Socket.IO Long-Polling/WS  │
+                    └───────────────┬───────────────┘
+                                    │
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │   Hostinger Cloud Database    │
+                    │   (MySQL 8+ / srv*.hstgr.io)  │
+                    └───────────────────────────────┘
+```
+
+### Option B: Hostinger KVM VPS (Split Daemon Architecture)
 ```
                            Internet (HTTPS / WSS)
                                      │
@@ -46,7 +76,45 @@
 
 ---
 
-## 2. Server Prerequisites & Initial Hardening
+## 2. Hostinger Cloud Hosting Deployment (hPanel)
+
+If deploying to Hostinger Cloud / Shared Web Hosting (e.g. Cloud Startup):
+
+### 2.1 Critical Configuration Parameters
+When creating or updating the Node.js application in Hostinger hPanel or via the Hostinger Deployment API:
+- **Node.js Version:** `22` (or `20`)
+- **Application Type (`appType`):** `express`
+- **Entry File (`entryFile`):** `server.js`
+- **Build Script (`buildScript`):** `build`
+- **Application Root:** Use the directory where the archive is extracted. Keep the Next.js `.next` build directory inside that root; it is not the application root or a document root.
+- **Build Script:** Build locally with `npm run package:hostinger` and upload the resulting archive as described in [the manual upload guide](HOSTINGER_MANUAL_UPLOAD.md). For hPanel deployments that build from source, use `npm run build`.
+- **Package Manager:** `npm`
+
+### 2.2 Environment Variables (Configured in hPanel > Advanced > Environment Variables)
+```ini
+NODE_ENV="production"
+PORT=3000
+HOST="0.0.0.0"
+NEXT_PUBLIC_APP_URL="https://<YOUR_DOMAIN>"
+NEXT_PUBLIC_API_URL="https://<YOUR_DOMAIN>/api"
+NEXT_PUBLIC_SOCKET_URL="https://<YOUR_DOMAIN>"
+DATABASE_URL="mysql://<DB_USER>:<DB_PASSWORD>@<DB_HOST>:3306/<DB_NAME>"
+JWT_SECRET="<SECURE_BASE64_KEY>"
+COOKIE_SIGNING_KEY="<SECURE_BASE64_KEY>"
+SESSION_COOKIE_NAME="gcs_session"
+SESSION_EXPIRY_DAYS=7
+COOKIE_SECURE="true"
+ADMIN_INITIAL_EMAIL="admin@globalcrestsolutions.com"
+ADMIN_INITIAL_PASSWORD="<STRONG_ADMIN_PASSWORD>"
+ADMIN_INITIAL_NAME="Global Crest Administrator"
+STUN_SERVER_URL="stun:stun.l.google.com:19302"
+STORAGE_VAULT_PATH="./storage/vault"
+MAX_UPLOAD_SIZE_BYTES=52428800
+```
+
+---
+
+## 3. Server Prerequisites & Initial Hardening (Hostinger VPS)
 
 ### 2.1 Update System & Install Required Toolchains
 Connect to your Hostinger VPS via SSH as `root`:

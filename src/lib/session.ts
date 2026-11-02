@@ -1,9 +1,12 @@
 import { SignJWT, jwtVerify } from 'jose';
 
-const JWT_SECRET_STRING =
-  process.env.JWT_SECRET ||
-  'gcs_connect_super_secure_jwt_secret_dev_key_2026_min32chars';
-const SECRET_KEY = new TextEncoder().encode(JWT_SECRET_STRING);
+const JWT_SECRET_STRING = process.env.JWT_SECRET;
+if (process.env.NODE_ENV === 'production' && (!JWT_SECRET_STRING || JWT_SECRET_STRING.length < 32)) {
+  throw new Error('JWT_SECRET must be configured with at least 32 characters in production.');
+}
+const SECRET_KEY = new TextEncoder().encode(
+  JWT_SECRET_STRING || 'gcs_connect_super_secure_jwt_secret_dev_key_2026_min32chars'
+);
 
 export interface SessionTokenPayload {
   userId: string;

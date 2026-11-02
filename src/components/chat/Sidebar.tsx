@@ -31,6 +31,7 @@ export interface ConversationItem {
   isPinned?: boolean;
   isMuted?: boolean;
   isGroup?: boolean;
+  peerUserId?: string;
 }
 
 export interface SidebarProps {
@@ -69,21 +70,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
   });
 
   return (
-    <div className="w-full sm:w-80 md:w-96 h-full bg-gcs-sidebar border-r border-gcs-border flex flex-col select-none">
+    <div className="w-full md:w-80 lg:w-96 h-full bg-gcs-sidebar md:border-r border-gcs-border flex flex-col select-none">
       {/* App Brand Header */}
-      <div className="p-4 border-b border-gcs-border/60 flex items-center justify-between">
+      <div className="p-3.5 sm:p-4 border-b border-gcs-border/60 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg bg-gcs-emerald/20 border border-gcs-emerald/40 flex items-center justify-center text-gcs-emerald font-bold text-sm shadow-emerald-sm">
-            <Shield className="w-4 h-4 text-gcs-emerald" />
+          <div className="h-8.5 w-8.5 rounded-xl bg-gcs-emerald/20 border border-gcs-emerald/40 flex items-center justify-center text-gcs-emerald font-bold text-sm shadow-emerald-sm shrink-0">
+            <Shield className="w-4.5 h-4.5 text-gcs-emerald" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h1 className="text-sm font-bold tracking-tight text-gcs-text flex items-center gap-1.5">
               <span>GCS CONNECT</span>
               <span className="text-[10px] font-mono font-medium px-1.5 py-0.2 bg-gcs-emerald/20 text-gcs-mint rounded border border-gcs-emerald/30">
                 E2EE
               </span>
             </h1>
-            <p className="text-[10px] text-gcs-muted truncate">
+            <p className="text-[10.5px] text-gcs-muted truncate">
               Connect Freely. Communicate Securely.
             </p>
           </div>
@@ -94,36 +95,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
             variant="ghost"
             size="icon"
             onClick={onNewChat}
-            className="h-8 w-8 text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card"
+            className="h-9 w-9 text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card rounded-full"
             aria-label="Start New Chat"
             title="Start New Chat"
           >
-            <MessageSquarePlus className="w-4 h-4" />
+            <MessageSquarePlus className="w-4.5 h-4.5" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
             onClick={onOpenSettings}
-            className="h-8 w-8 text-gcs-muted hover:text-gcs-text hover:bg-gcs-card"
+            className="h-9 w-9 text-gcs-muted hover:text-gcs-text hover:bg-gcs-card rounded-full"
             aria-label="Settings"
             title="Settings"
           >
-            <Settings className="w-4 h-4" />
+            <Settings className="w-4.5 h-4.5" />
           </Button>
         </div>
       </div>
 
       {/* Search & Filters */}
-      <div className="p-3 border-b border-gcs-border/40 flex flex-col gap-2">
+      <div className="p-2.5 sm:p-3 border-b border-gcs-border/40 flex flex-col gap-2 shrink-0">
         <Input
           placeholder="Search chats or messages..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           leftIcon={<Search className="w-4 h-4 text-gcs-muted" />}
-          className="h-8.5 bg-gcs-card/80 text-xs rounded-xl"
+          className="h-9 bg-gcs-card/80 text-base sm:text-xs rounded-xl"
         />
 
-        <div className="flex items-center gap-1.5 pt-0.5 overflow-x-auto pb-0.5">
+        <div className="flex items-center gap-1.5 pt-0.5 overflow-x-auto pb-0.5 no-scrollbar scroll-touch">
           {(['all', 'unread', 'direct', 'groups'] as const).map((tab) => {
             const count = tab === 'unread' ? unreadTotal : undefined;
             return (
@@ -131,7 +132,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 key={tab}
                 onClick={() => setFilter(tab)}
                 className={cn(
-                  'text-xs px-2.5 py-1 rounded-full font-medium capitalize transition-colors flex items-center gap-1 shrink-0',
+                  'text-xs px-3 py-1.5 rounded-full font-medium capitalize transition-colors flex items-center gap-1 shrink-0 active:scale-95',
                   filter === tab
                     ? 'bg-gcs-emerald/20 text-gcs-mint border border-gcs-emerald/40'
                     : 'text-gcs-muted hover:text-gcs-text hover:bg-gcs-card'
@@ -182,7 +183,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 key={item.id}
                 onClick={() => onSelectConversation(item.id)}
                 className={cn(
-                  'flex items-center gap-3 p-3.5 cursor-pointer transition-colors text-left relative group',
+                  'flex items-center gap-3 p-3.5 cursor-pointer transition-colors text-left relative group active:bg-gcs-card/80',
                   isActive
                     ? 'bg-gcs-card/90 border-l-3 border-gcs-emerald'
                     : 'hover:bg-gcs-card/50'
@@ -213,7 +214,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <div className="flex items-center justify-between gap-1">
                     <div className="flex items-center gap-1 text-xs text-gcs-muted truncate">
                       {item.lastMessageStatus === 'read' && (
-                        <CheckCheck className="w-3.5 h-3.5 text-gcs-mint shrink-0" />
+                        <CheckCheck className="w-3.5 h-3.5 text-[#34B7F1] shrink-0" />
                       )}
                       {item.lastMessageStatus === 'delivered' && (
                         <CheckCheck className="w-3.5 h-3.5 text-gcs-muted shrink-0" />
@@ -243,7 +244,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             e.stopPropagation();
                             onDeleteConversation(item.id, e);
                           }}
-                          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-gcs-muted hover:text-red-400 transition-all"
+                          className="opacity-60 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 rounded-lg hover:bg-red-500/20 text-gcs-muted hover:text-red-400 active:scale-95 transition-all"
                           title="Delete Chat"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
