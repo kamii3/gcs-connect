@@ -504,8 +504,30 @@ export default function AdminDashboardPage() {
         alert(data.message || 'Failed to permanently delete user.');
         return;
       }
-      alert(`User ${userEmail} was permanently removed.`);
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
       setIsDetailModalOpen(false);
+      fetchMetrics();
+      fetchAuditLogs();
+    } catch (err: any) {
+      alert(err.message || 'Network error occurred.');
+    }
+  };
+
+  const handlePurgeNonAdmins = async () => {
+    const confirmed = window.confirm(
+      'PURGE ALL USERS: Are you sure you want to permanently delete ALL non-admin users and their data? The Root Administrator will be safely preserved.'
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch('/api/admin/users/purge-non-admins', {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.message || 'Failed to purge users.');
+        return;
+      }
       fetchUsers();
       fetchMetrics();
       fetchAuditLogs();
@@ -531,36 +553,6 @@ export default function AdminDashboardPage() {
             <p className="text-xs text-gcs-muted mt-1 max-w-xs">
               Restricted Access — Authorized Security & System Administrators Only
             </p>
-          </div>
-
-          {/* Credentials Helper Box (as requested by user) */}
-          <div className="mb-5 p-3.5 rounded-xl bg-gcs-sidebar border border-gcs-emerald/30 text-xs flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="font-semibold text-gcs-mint flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
-                <KeyRound className="w-3.5 h-3.5 text-gcs-emerald" />
-                Admin Credentials
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setAdminLoginEmail('admin@globalcrestsolutions.com');
-                  setAdminLoginPassword('Kamii@336');
-                }}
-                className="text-[10.5px] px-2 py-0.5 rounded bg-gcs-emerald/20 hover:bg-gcs-emerald/30 text-gcs-mint font-medium transition-colors"
-              >
-                Auto-Fill
-              </button>
-            </div>
-            <div className="font-mono text-[11px] text-gcs-muted flex flex-col gap-0.5">
-              <div>
-                <span className="text-gcs-muted/60">Username / Email:</span>{' '}
-                <span className="text-gcs-text select-all font-semibold">admin@globalcrestsolutions.com</span>
-              </div>
-              <div>
-                <span className="text-gcs-muted/60">Password:</span>{' '}
-                <span className="text-gcs-text select-all font-semibold">Kamii@336</span>
-              </div>
-            </div>
           </div>
 
           {/* Error Banner */}
@@ -1031,6 +1023,17 @@ export default function AdminDashboardPage() {
                 >
                   Filter
                 </Button>
+
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={handlePurgeNonAdmins}
+                  className="text-xs px-3 bg-[#D94D55]/20 hover:bg-[#D94D55] text-[#ff8e95] hover:text-white border border-[#D94D55]/40 transition-colors whitespace-nowrap"
+                  title="Purge all non-administrator users and their data"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                  Purge All Non-Admins
+                </Button>
               </div>
             </div>
 
@@ -1085,44 +1088,61 @@ export default function AdminDashboardPage() {
                           {new Date(u.createdAt).toLocaleDateString()}
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => viewUserDetails(u.id)}
-                              className="text-[11px] h-7 px-2.5 border-gcs-border hover:border-gcs-emerald text-gcs-text"
-                            >
-                              <KeyRound className="w-3 h-3 mr-1 text-gcs-emerald" />
-                              Crypto Inventory
-                            </Button>
+                          {u.roles.includes('SUPER_ADMIN') || u.email === 'admin@globalcrestsolutions.com' ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => viewUserDetails(u.id)}
+                                className="text-[11px] h-7 px-2.5 border-gcs-border hover:border-gcs-emerald text-gcs-text"
+                              >
+                                <KeyRound className="w-3 h-3 mr-1 text-gcs-emerald" />
+                                Crypto Inventory
+                              </Button>
+                              <span className="text-[10px] font-mono font-semibold px-2.5 py-1 rounded-md bg-gcs-emerald/15 text-gcs-mint border border-gcs-emerald/30">
+                                Root Admin (Protected)
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => viewUserDetails(u.id)}
+                                className="text-[11px] h-7 px-2.5 border-gcs-border hover:border-gcs-emerald text-gcs-text"
+                              >
+                                <KeyRound className="w-3 h-3 mr-1 text-gcs-emerald" />
+                                Crypto Inventory
+                              </Button>
 
-                            <Button
-                              variant={u.status === 'ACTIVE' ? 'danger' : 'secondary'}
-                              size="sm"
-                              onClick={() => handleToggleUserStatus(u.id, u.status)}
-                              className="text-[11px] h-7 px-2.5"
-                            >
-                              {u.status === 'ACTIVE' ? (
-                                <>
-                                  <Ban className="w-3 h-3 mr-1" /> Suspend
-                                </>
-                              ) : (
-                                <>
-                                  <Play className="w-3 h-3 mr-1 text-gcs-emerald" /> Reactivate
-                                </>
-                              )}
-                            </Button>
+                              <Button
+                                variant={u.status === 'ACTIVE' ? 'secondary' : 'primary'}
+                                size="sm"
+                                onClick={() => handleToggleUserStatus(u.id, u.status)}
+                                className="text-[11px] h-7 px-2.5"
+                              >
+                                {u.status === 'ACTIVE' ? (
+                                  <>
+                                    <Ban className="w-3 h-3 mr-1" /> Suspend
+                                  </>
+                                ) : (
+                                  <>
+                                    <Play className="w-3 h-3 mr-1 text-gcs-emerald" /> Reactivate
+                                  </>
+                                )}
+                              </Button>
 
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              onClick={() => handlePermanentDeleteUser(u.id, u.email)}
-                              className="text-[11px] h-7 px-2.5 bg-[#D94D55]/20 hover:bg-[#D94D55] text-[#ff8e95] hover:text-white border border-[#D94D55]/40"
-                              title="Permanently Delete User"
-                            >
-                              <Trash2 className="w-3 h-3 mr-1" /> Delete
-                            </Button>
-                          </div>
+                              <Button
+                                variant="danger"
+                                size="sm"
+                                onClick={() => handlePermanentDeleteUser(u.id, u.email)}
+                                className="text-[11px] h-7 px-2.5 bg-[#D94D55]/20 hover:bg-[#D94D55] text-[#ff8e95] hover:text-white border border-[#D94D55]/40 transition-colors"
+                                title="Permanently Delete User"
+                              >
+                                <Trash2 className="w-3 h-3 mr-1" /> Delete
+                              </Button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}

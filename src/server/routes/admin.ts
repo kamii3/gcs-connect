@@ -545,6 +545,117 @@ router.post('/users/:id/revoke-sessions', async (req: Request, res: Response): P
 });
 
 /**
+ * Purge user and all associated keys, devices, sessions, and messages from the database
+ */
+export async function purgeUserFromDatabase(tx: any, targetUserId: string) {
+  const targetUser = await tx.user.findUnique({
+    where: { id: targetUserId },
+    include: { devices: true },
+  });
+  if (!targetUser) return null;
+
+  const deviceIds = targetUser.devices.map((d: any) => d.id);
+
+  // 1. Delete user blocks & notifications & invitations
+  await tx.userBlock.deleteMany({
+    where: { OR: [{ blockerUserId: targetUserId }, { blockedUserId: targetUserId }] },
+  });
+  await tx.notification.deleteMany({ where: { userId: targetUserId } });
+  await tx.invitation.deleteMany({ where: { invitedById: targetUserId } });
+
+  // 2. Delete calls initiated by user
+  const calls = await tx.call.findMany({ where: { initiatorUserId: targetUserId } });
+  const callIds = calls.map((c: any) => c.id);
+  if (callIds.length > 0) {
+    await tx.callParticipant.deleteMany({ where: { callId: { in: callIds } } });
+    await tx.call.deleteMany({ where: { id: { in: callIds } } });
+  }
+
+  // 3. Delete user's sessions
+  await tx.userSession.deleteMany({ where: { userId: targetUserId } });
+
+  // 4. Handle direct conversations involving this user
+  const directMemberships = await tx.conversationMember.findMany({
+    where: { userId: targetUserId },
+    include: { conversation: true },
+  });
+  for (const mem of directMemberships) {
+    if (mem.conversation.type === 'DIRECT') {
+      const directMsgs = await tx.message.findMany({
+        where: { conversationId: mem.conversationId },
+        select: { id: true },
+      });
+      const msgIds = directMsgs.map((m: any) => m.id);
+      if (msgIds.length > 0) {
+        await tx.attachment.deleteMany({ where: { messageId: { in: msgIds } } });
+        await tx.messageReceipt.deleteMany({ where: { messageId: { in: msgIds } } });
+        await tx.messageReaction.deleteMany({ where: { messageId: { in: msgIds } } });
+        await tx.message.deleteMany({ where: { id: { in: msgIds } } });
+      }
+      await tx.conversationMember.deleteMany({ where: { conversationId: mem.conversationId } });
+      await tx.conversation.delete({ where: { id: mem.conversationId } });
+    }
+  }
+
+  // 5. Clean up device references & messages
+  if (deviceIds.length > 0) {
+    await tx.message.updateMany({
+      where: { recipientDeviceId: { in: deviceIds } },
+      data: { recipientDeviceId: null },
+    });
+    await tx.messageReceipt.deleteMany({
+      where: { OR: [{ userId: targetUserId }, { deviceId: { in: deviceIds } }] },
+    });
+    await tx.callParticipant.deleteMany({
+      where: { OR: [{ userId: targetUserId }, { deviceId: { in: deviceIds } }] },
+    });
+
+    const sentMessages = await tx.message.findMany({
+      where: { senderDeviceId: { in: deviceIds } },
+      select: { id: true },
+    });
+    const sentMsgIds = sentMessages.map((m: any) => m.id);
+    if (sentMsgIds.length > 0) {
+      await tx.attachment.deleteMany({ where: { messageId: { in: sentMsgIds } } });
+      await tx.messageReceipt.deleteMany({ where: { messageId: { in: sentMsgIds } } });
+      await tx.messageReaction.deleteMany({ where: { messageId: { in: sentMsgIds } } });
+      await tx.message.deleteMany({ where: { id: { in: sentMsgIds } } });
+    }
+
+    await tx.oneTimePrekey.deleteMany({ where: { deviceId: { in: deviceIds } } });
+    await tx.signedPrekey.deleteMany({ where: { deviceId: { in: deviceIds } } });
+    await tx.encryptionIdentityKey.deleteMany({ where: { deviceId: { in: deviceIds } } });
+    await tx.encryptedKeyBundle.deleteMany({ where: { deviceId: { in: deviceIds } } });
+    await tx.deviceKeyMetadata.deleteMany({ where: { deviceId: { in: deviceIds } } });
+  }
+
+  // 6. Delete devices
+  await tx.device.deleteMany({ where: { userId: targetUserId } });
+
+  // 7. Delete user roles
+  await tx.userRole.deleteMany({ where: { userId: targetUserId } });
+
+  // 8. Delete any remaining conversation memberships
+  await tx.conversationMember.deleteMany({ where: { userId: targetUserId } });
+
+  // 9. Delete any remaining receipts / reactions / call participants
+  await tx.messageReceipt.deleteMany({ where: { userId: targetUserId } });
+  await tx.messageReaction.deleteMany({ where: { userId: targetUserId } });
+  await tx.callParticipant.deleteMany({ where: { userId: targetUserId } });
+
+  // 10. Nullify audit log user references
+  await tx.auditLog.updateMany({
+    where: { userId: targetUserId },
+    data: { userId: null },
+  });
+
+  // 11. Delete user record
+  await tx.user.delete({ where: { id: targetUserId } });
+
+  return targetUser;
+}
+
+/**
  * DELETE /api/admin/users/:id and /api/admin/users/:id/permanent
  * Permanently purge user and all associated keys, devices, and sessions from the database
  */
@@ -560,104 +671,35 @@ const handlePermanentUserDelete = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    const targetUser = await prisma.user.findUnique({
-      where: { id },
-      include: { devices: true },
+    let deletedUser: any = null;
+    await prisma.$transaction(async (tx) => {
+      deletedUser = await purgeUserFromDatabase(tx, id);
+      if (deletedUser) {
+        await tx.auditLog.create({
+          data: {
+            userId: req.user!.id,
+            actorEmail: req.user!.email,
+            action: 'USER_PERMANENTLY_DELETED',
+            entityType: 'USER',
+            entityId: id,
+            ipAddress: req.ip,
+            details: JSON.stringify({
+              deletedUserEmail: deletedUser.email,
+              deletedFullName: deletedUser.fullName,
+            }),
+          },
+        });
+      }
     });
 
-    if (!targetUser) {
+    if (!deletedUser) {
       res.status(404).json({ error: 'USER_NOT_FOUND', message: 'User does not exist.' });
       return;
     }
 
-    const deviceIds = targetUser.devices.map((d) => d.id);
-
-    await prisma.$transaction(async (tx) => {
-      // 1. Delete user blocks & notifications & invitations
-      await tx.userBlock.deleteMany({
-        where: { OR: [{ blockerUserId: id }, { blockedUserId: id }] },
-      });
-      await tx.notification.deleteMany({ where: { userId: id } });
-      await tx.invitation.deleteMany({ where: { invitedById: id } });
-
-      // 2. Delete calls initiated by user
-      const calls = await tx.call.findMany({ where: { initiatorUserId: id } });
-      const callIds = calls.map((c) => c.id);
-      if (callIds.length > 0) {
-        await tx.callParticipant.deleteMany({ where: { callId: { in: callIds } } });
-        await tx.call.deleteMany({ where: { id: { in: callIds } } });
-      }
-
-      // 3. Delete user's sessions
-      await tx.userSession.deleteMany({ where: { userId: id } });
-
-      // 4. Delete messages sent by user's devices
-      if (deviceIds.length > 0) {
-        const sentMessages = await tx.message.findMany({
-          where: { senderDeviceId: { in: deviceIds } },
-          select: { id: true },
-        });
-        const sentMsgIds = sentMessages.map((m) => m.id);
-        if (sentMsgIds.length > 0) {
-          await tx.attachment.deleteMany({ where: { messageId: { in: sentMsgIds } } });
-          await tx.messageReceipt.deleteMany({ where: { messageId: { in: sentMsgIds } } });
-          await tx.messageReaction.deleteMany({ where: { messageId: { in: sentMsgIds } } });
-          await tx.message.deleteMany({ where: { id: { in: sentMsgIds } } });
-        }
-
-        // Delete cryptographic keys belonging to user's devices
-        await tx.oneTimePrekey.deleteMany({ where: { deviceId: { in: deviceIds } } });
-        await tx.signedPrekey.deleteMany({ where: { deviceId: { in: deviceIds } } });
-        await tx.encryptionIdentityKey.deleteMany({ where: { deviceId: { in: deviceIds } } });
-        await tx.encryptedKeyBundle.deleteMany({ where: { deviceId: { in: deviceIds } } });
-        await tx.deviceKeyMetadata.deleteMany({ where: { deviceId: { in: deviceIds } } });
-      }
-
-      // 5. Delete devices
-      await tx.device.deleteMany({ where: { userId: id } });
-
-      // 6. Delete user roles
-      await tx.userRole.deleteMany({ where: { userId: id } });
-
-      // 7. Delete conversation memberships
-      await tx.conversationMember.deleteMany({ where: { userId: id } });
-
-      // 8. Delete message receipts & reactions
-      await tx.messageReceipt.deleteMany({ where: { userId: id } });
-      await tx.messageReaction.deleteMany({ where: { userId: id } });
-
-      // 9. Delete call participant records
-      await tx.callParticipant.deleteMany({ where: { userId: id } });
-
-      // 10. Nullify audit log user references if any
-      await tx.auditLog.updateMany({
-        where: { userId: id },
-        data: { userId: null },
-      });
-
-      // 11. Permanently remove user
-      await tx.user.delete({ where: { id } });
-
-      // 12. Record immutable audit log
-      await tx.auditLog.create({
-        data: {
-          userId: req.user!.id,
-          actorEmail: req.user!.email,
-          action: 'USER_PERMANENTLY_DELETED',
-          entityType: 'USER',
-          entityId: id,
-          ipAddress: req.ip,
-          details: JSON.stringify({
-            deletedUserEmail: targetUser.email,
-            deletedFullName: targetUser.fullName,
-          }),
-        },
-      });
-    });
-
     res.status(200).json({
       success: true,
-      message: `User ${targetUser.email} was permanently deleted from the system.`,
+      message: `User ${deletedUser.email} was permanently deleted from the system.`,
     });
   } catch (err: any) {
     console.error('Admin permanent delete user error:', err);
@@ -667,6 +709,55 @@ const handlePermanentUserDelete = async (req: Request, res: Response): Promise<v
 
 router.delete('/users/:id/permanent', handlePermanentUserDelete);
 router.delete('/users/:id', handlePermanentUserDelete);
+
+/**
+ * POST /api/admin/users/purge-non-admins
+ * Permanently purge all non-administrator users and their data
+ */
+router.post('/users/purge-non-admins', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const nonAdminUsers = await prisma.user.findMany({
+      where: {
+        id: { not: req.user!.id },
+        email: { not: 'admin@globalcrestsolutions.com' },
+        roles: {
+          none: {
+            role: 'SUPER_ADMIN',
+          },
+        },
+      },
+      select: { id: true, email: true },
+    });
+
+    let purgedCount = 0;
+    for (const target of nonAdminUsers) {
+      await prisma.$transaction(async (tx) => {
+        await purgeUserFromDatabase(tx, target.id);
+        purgedCount++;
+      });
+    }
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user!.id,
+        actorEmail: req.user!.email,
+        action: 'PURGE_ALL_NON_ADMIN_USERS',
+        entityType: 'USER',
+        ipAddress: req.ip,
+        details: JSON.stringify({ purgedCount, users: nonAdminUsers.map((u) => u.email) }),
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully purged ${purgedCount} non-admin user(s).`,
+      count: purgedCount,
+    });
+  } catch (err: any) {
+    console.error('Purge non-admins error:', err);
+    res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: err.message });
+  }
+});
 
 /**
  * POST /api/admin/change-password

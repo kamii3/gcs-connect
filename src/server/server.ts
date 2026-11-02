@@ -11,9 +11,13 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
-const PORT = parseInt(process.env.API_PORT || '3001', 10);
+const PORT = parseInt(process.env.API_PORT || process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0';
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+const APP_URL =
+  process.env.NEXT_PUBLIC_APP_URL ||
+  (process.env.NODE_ENV === 'production'
+    ? 'https://chat.globalcrestsolutions.com'
+    : 'http://localhost:3000');
 
 app.set('trust proxy', true);
 
@@ -136,7 +140,17 @@ app.use((err: any, req: Request, res: Response, next: any) => {
 // 6. Socket.IO Real-Time Engine Setup
 const io = new SocketIOServer(server, {
   cors: {
-    origin: [APP_URL, 'http://localhost:3000'],
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (
+        origin.includes('globalcrestsolutions.com') ||
+        origin.includes('localhost') ||
+        origin.includes('127.0.0.1')
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
     credentials: true,
     methods: ['GET', 'POST'],
   },
@@ -170,7 +184,7 @@ io.on('connection', async (socket) => {
 });
 
 // 4. Server Startup
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && !process.env.UNIFIED_SERVER) {
   server.listen(PORT, HOST, () => {
     console.log(`=======================================================`);
     console.log(` GCS CONNECT — Real-Time API & Signaling Server`);

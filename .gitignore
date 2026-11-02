@@ -13,6 +13,7 @@
 # Production build
 /build
 /dist
+*.tsbuildinfo
 
 # Environment variables
 .env
@@ -32,6 +33,9 @@ yarn-error.log*
 *.db-shm
 *.db-wal
 /.mysql_dev/
+/backups/
+*.enc
+*.sql.gz*
 /storage/vault/*
 !/storage/vault/.gitkeep
 /storage/encrypted_media/*

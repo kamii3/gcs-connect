@@ -3,10 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "description": "GCS CONNECT — Secure End-to-End Encrypted Messaging & Real-Time Communications Platform",
+  "main": "server.js",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "build": "prisma generate && next build",
+    "start": "node server.js",
+    "start:standalone": "next start",
     "start:all": "bash scripts/start-all.sh",
     "server": "tsx src/server/server.ts",
     "test": "vitest run",
@@ -35,6 +37,7 @@
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "tailwind-merge": "^2.6.0",
+    "tsx": "^4.19.3",
     "zod": "^3.24.2"
   },
   "devDependencies": {

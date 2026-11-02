@@ -27,163 +27,166 @@ async function main() {
   });
   console.log(`✓ Admin seeded: ${admin.email}`);
 
-  // 2. Seed Alice Walker (Security Lead)
-  const alicePasswordHash = await hashPassword('AliceSecurePass2026!');
-  const alice = await prisma.user.upsert({
-    where: { email: 'alice@globalcrestsolutions.com' },
-    update: {},
-    create: {
-      email: 'alice@globalcrestsolutions.com',
-      passwordHash: alicePasswordHash,
-      fullName: 'Alice Walker',
-      displayName: 'Alice (Security)',
-      status: 'ACTIVE',
-      roles: {
-        create: {
-          role: 'SECURITY_AUDITOR',
-          assignedBy: admin.id,
+  // 2. Only Seed Demo Users if explicitly requested
+  if (process.env.SEED_DEMO_USERS === 'true') {
+    // Seed Alice Walker (Security Lead)
+    const alicePasswordHash = await hashPassword('AliceSecurePass2026!');
+    const alice = await prisma.user.upsert({
+      where: { email: 'alice@globalcrestsolutions.com' },
+      update: {},
+      create: {
+        email: 'alice@globalcrestsolutions.com',
+        passwordHash: alicePasswordHash,
+        fullName: 'Alice Walker',
+        displayName: 'Alice (Security)',
+        status: 'ACTIVE',
+        roles: {
+          create: {
+            role: 'SECURITY_AUDITOR',
+            assignedBy: admin.id,
+          },
         },
       },
-    },
-  });
-  console.log(`✓ User seeded: ${alice.email}`);
+    });
+    console.log(`✓ User seeded: ${alice.email}`);
 
-  // 3. Seed Bob Vance (DevOps Lead)
-  const bobPasswordHash = await hashPassword('BobDevOpsPass2026!');
-  const bob = await prisma.user.upsert({
-    where: { email: 'bob@globalcrestsolutions.com' },
-    update: {},
-    create: {
-      email: 'bob@globalcrestsolutions.com',
-      passwordHash: bobPasswordHash,
-      fullName: 'Bob Vance',
-      displayName: 'Bob (DevOps)',
-      status: 'ACTIVE',
-      roles: {
-        create: {
-          role: 'USER',
-          assignedBy: admin.id,
+    // Seed Bob Vance (DevOps Lead)
+    const bobPasswordHash = await hashPassword('BobDevOpsPass2026!');
+    const bob = await prisma.user.upsert({
+      where: { email: 'bob@globalcrestsolutions.com' },
+      update: {},
+      create: {
+        email: 'bob@globalcrestsolutions.com',
+        passwordHash: bobPasswordHash,
+        fullName: 'Bob Vance',
+        displayName: 'Bob (DevOps)',
+        status: 'ACTIVE',
+        roles: {
+          create: {
+            role: 'USER',
+            assignedBy: admin.id,
+          },
         },
       },
-    },
-  });
-  console.log(`✓ User seeded: ${bob.email}`);
+    });
+    console.log(`✓ User seeded: ${bob.email}`);
 
-  // 4. Seed Devices for Alice and Bob
-  const aliceDevice = await prisma.device.upsert({
-    where: {
-      userId_deviceFingerprint: {
+    // Seed Devices for Alice and Bob
+    const aliceDevice = await prisma.device.upsert({
+      where: {
+        userId_deviceFingerprint: {
+          userId: alice.id,
+          deviceFingerprint: 'fp-alice-workstation-chrome-01',
+        },
+      },
+      update: {},
+      create: {
         userId: alice.id,
+        deviceName: 'Alice ThinkPad (Chromium)',
         deviceFingerprint: 'fp-alice-workstation-chrome-01',
-      },
-    },
-    update: {},
-    create: {
-      userId: alice.id,
-      deviceName: 'Alice ThinkPad (Chromium)',
-      deviceFingerprint: 'fp-alice-workstation-chrome-01',
-      clientPlatform: 'WEB_CHROME',
-      isActive: true,
-      identityKey: {
-        create: {
-          publicIdentityKey: 'b64_IK_Alice_p256_mock_public_key_curve25519_sample_data==',
-          keyAlgorithm: 'Curve25519',
+        clientPlatform: 'WEB_CHROME',
+        isActive: true,
+        identityKey: {
+          create: {
+            publicIdentityKey: 'b64_IK_Alice_p256_mock_public_key_curve25519_sample_data==',
+            keyAlgorithm: 'Curve25519',
+          },
+        },
+        keyMetadata: {
+          create: {
+            activeOneTimePrekeyCount: 100,
+            signedPrekeyRotationDueAt: new Date(Date.now() + 30 * 86400000),
+          },
+        },
+        signedPrekeys: {
+          create: {
+            keyId: 1,
+            publicKey: 'b64_SPK_Alice_mock_public_key_data==',
+            signature: 'b64_SPK_Signature_Alice_verified_by_IK==',
+            isActive: true,
+          },
         },
       },
-      keyMetadata: {
-        create: {
-          activeOneTimePrekeyCount: 100,
-          signedPrekeyRotationDueAt: new Date(Date.now() + 30 * 86400000),
-        },
-      },
-      signedPrekeys: {
-        create: {
-          keyId: 1,
-          publicKey: 'b64_SPK_Alice_mock_public_key_data==',
-          signature: 'b64_SPK_Signature_Alice_verified_by_IK==',
-          isActive: true,
-        },
-      },
-    },
-  });
+    });
 
-  const bobDevice = await prisma.device.upsert({
-    where: {
-      userId_deviceFingerprint: {
+    const bobDevice = await prisma.device.upsert({
+      where: {
+        userId_deviceFingerprint: {
+          userId: bob.id,
+          deviceFingerprint: 'fp-bob-macbook-chrome-01',
+        },
+      },
+      update: {},
+      create: {
         userId: bob.id,
+        deviceName: 'Bob MacBook Pro (Chromium)',
         deviceFingerprint: 'fp-bob-macbook-chrome-01',
-      },
-    },
-    update: {},
-    create: {
-      userId: bob.id,
-      deviceName: 'Bob MacBook Pro (Chromium)',
-      deviceFingerprint: 'fp-bob-macbook-chrome-01',
-      clientPlatform: 'WEB_CHROME',
-      isActive: true,
-      identityKey: {
-        create: {
-          publicIdentityKey: 'b64_IK_Bob_p256_mock_public_key_curve25519_sample_data==',
-          keyAlgorithm: 'Curve25519',
+        clientPlatform: 'WEB_CHROME',
+        isActive: true,
+        identityKey: {
+          create: {
+            publicIdentityKey: 'b64_IK_Bob_p256_mock_public_key_curve25519_sample_data==',
+            keyAlgorithm: 'Curve25519',
+          },
         },
-      },
-      keyMetadata: {
-        create: {
-          activeOneTimePrekeyCount: 100,
-          signedPrekeyRotationDueAt: new Date(Date.now() + 30 * 86400000),
+        keyMetadata: {
+          create: {
+            activeOneTimePrekeyCount: 100,
+            signedPrekeyRotationDueAt: new Date(Date.now() + 30 * 86400000),
+          },
         },
-      },
-      signedPrekeys: {
-        create: {
-          keyId: 1,
-          publicKey: 'b64_SPK_Bob_mock_public_key_data==',
-          signature: 'b64_SPK_Signature_Bob_verified_by_IK==',
-          isActive: true,
-        },
-      },
-    },
-  });
-
-  console.log('✓ Devices & E2EE public keys registered');
-
-  // 5. Seed Conversation between Alice and Bob
-  const existingConv = await prisma.conversationMember.findFirst({
-    where: { userId: alice.id },
-    include: { conversation: true },
-  });
-
-  let conversationId = existingConv?.conversationId;
-
-  if (!conversationId) {
-    const conv = await prisma.conversation.create({
-      data: {
-        type: 'DIRECT',
-        title: null,
-        isEncrypted: true,
-        members: {
-          create: [
-            { userId: alice.id, role: 'OWNER' },
-            { userId: bob.id, role: 'MEMBER' },
-          ],
+        signedPrekeys: {
+          create: {
+            keyId: 1,
+            publicKey: 'b64_SPK_Bob_mock_public_key_data==',
+            signature: 'b64_SPK_Signature_Bob_verified_by_IK==',
+            isActive: true,
+          },
         },
       },
     });
-    conversationId = conv.id;
 
-    // Seed Initial End-to-End Encrypted Messages (Base64 Ciphertext)
-    await prisma.message.create({
-      data: {
-        conversationId,
-        senderDeviceId: aliceDevice.id,
-        recipientDeviceId: bobDevice.id,
-        messageType: 'TEXT',
-        encryptedPayload: 'b64_CIPHERTEXT_AES_256_GCM_918203810284019284019283019284==',
-        initializationVector: 'b64_IV_12bytes_sample==',
-        authTag: 'b64_AUTHTAG_16bytes==',
-        ratchetSequenceNumber: 0,
-        previousChainLength: 0,
-      },
+    console.log('✓ Devices & E2EE public keys registered');
+
+    // Seed Conversation between Alice and Bob
+    const existingConv = await prisma.conversationMember.findFirst({
+      where: { userId: alice.id },
+      include: { conversation: true },
     });
+
+    let conversationId = existingConv?.conversationId;
+
+    if (!conversationId) {
+      const conv = await prisma.conversation.create({
+        data: {
+          type: 'DIRECT',
+          title: null,
+          isEncrypted: true,
+          members: {
+            create: [
+              { userId: alice.id, role: 'OWNER' },
+              { userId: bob.id, role: 'MEMBER' },
+            ],
+          },
+        },
+      });
+      conversationId = conv.id;
+
+      // Seed Initial End-to-End Encrypted Messages (Base64 Ciphertext)
+      await prisma.message.create({
+        data: {
+          conversationId,
+          senderDeviceId: aliceDevice.id,
+          recipientDeviceId: bobDevice.id,
+          messageType: 'TEXT',
+          encryptedPayload: 'b64_CIPHERTEXT_AES_256_GCM_918203810284019284019283019284==',
+          initializationVector: 'b64_IV_12bytes_sample==',
+          authTag: 'b64_AUTHTAG_16bytes==',
+          ratchetSequenceNumber: 0,
+          previousChainLength: 0,
+        },
+      });
+    }
   }
 
   // 6. Seed Sticker Pack

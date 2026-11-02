@@ -700,35 +700,6 @@ export default function AppHome() {
             </button>
           </div>
 
-          {/* Quick Demo Sign In Pills (only shown in Login mode) */}
-          {authMode === 'login' && (
-            <div className="mb-4 p-2.5 rounded-xl bg-gcs-sidebar border border-gcs-border text-xs flex flex-col gap-1.5">
-              <span className="text-[10.5px] uppercase font-semibold text-gcs-muted tracking-wider">Quick Demo Users:</span>
-              <div className="grid grid-cols-2 gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLoginEmail('alice@globalcrestsolutions.com');
-                    setLoginPassword('AliceSecurePass2026!');
-                  }}
-                  className="text-[11px] px-2 py-1 rounded bg-gcs-card hover:bg-gcs-card/80 text-gcs-mint border border-gcs-border font-medium transition-colors text-center"
-                >
-                  Alice Walker
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLoginEmail('bob@globalcrestsolutions.com');
-                    setLoginPassword('BobDevOpsPass2026!');
-                  }}
-                  className="text-[11px] px-2 py-1 rounded bg-gcs-card hover:bg-gcs-card/80 text-gcs-mint border border-gcs-border font-medium transition-colors text-center"
-                >
-                  Bob Vance
-                </button>
-              </div>
-            </div>
-          )}
-
           {loginError && (
             <div className="mb-4 p-3 rounded-xl bg-[#D94D55]/15 border border-[#D94D55]/40 text-[#ff8e95] text-xs flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0" />
