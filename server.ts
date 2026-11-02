@@ -39,7 +39,7 @@ async function start() {
   console.log('[Boot] Next.js engine ready.');
 
   // 3. Mount Next.js request handler for all non-Express routes
-  app.all('*', (req, res) => {
+  app.all('*', (req: any, res: any) => {
     return handle(req, res);
   });
 

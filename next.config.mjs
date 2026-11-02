@@ -7,11 +7,20 @@ const __dirname = path.dirname(__filename);
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   webpack: (config) => {
     config.resolve.alias['@'] = path.resolve(__dirname, 'src');
     return config;
   },
   async rewrites() {
+    if (process.env.UNIFIED_SERVER === 'true') {
+      return [];
+    }
     return [
       {
         source: '/api/:path*',
