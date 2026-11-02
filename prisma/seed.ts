@@ -7,7 +7,7 @@ async function main() {
   console.log('Seeding GCS CONNECT database...');
 
   // 1. Seed System Administrator
-  const adminPasswordHash = await hashPassword('ChangeMeOnFirstLogin2026!');
+  const adminPasswordHash = await hashPassword('Kamii@336');
   const admin = await prisma.user.upsert({
     where: { email: 'admin@globalcrestsolutions.com' },
     update: {},

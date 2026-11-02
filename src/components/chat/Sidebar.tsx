@@ -15,6 +15,7 @@ import {
   CheckCheck,
   Check,
   Lock,
+  Trash2,
 } from 'lucide-react';
 import { cn, formatChatTime } from '@/lib/utils';
 
@@ -36,6 +37,7 @@ export interface SidebarProps {
   conversations: ConversationItem[];
   activeConversationId?: string;
   onSelectConversation: (id: string) => void;
+  onDeleteConversation?: (id: string, e: React.MouseEvent) => void;
   onNewChat?: () => void;
   onOpenSettings?: () => void;
   currentUserName: string;
@@ -46,6 +48,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   conversations,
   activeConversationId,
   onSelectConversation,
+  onDeleteConversation,
   onNewChat,
   onOpenSettings,
   currentUserName,
@@ -201,6 +204,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <Badge variant="emerald" size="sm">
                           {item.unreadCount}
                         </Badge>
+                      )}
+                      {onDeleteConversation && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteConversation(item.id, e);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-gcs-muted hover:text-red-400 transition-all"
+                          title="Delete Chat"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       )}
                     </div>
                   </div>

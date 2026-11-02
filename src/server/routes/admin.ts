@@ -542,6 +542,204 @@ router.post('/users/:id/revoke-sessions', async (req: Request, res: Response): P
 });
 
 /**
+ * DELETE /api/admin/users/:id/permanent
+ * Permanently purge user and all associated keys, devices, and sessions from the database
+ */
+router.delete('/users/:id/permanent', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    if (id === req.user!.id) {
+      res.status(400).json({
+        error: 'CANNOT_DELETE_SELF',
+        message: 'Administrators cannot permanently delete their own active account.',
+      });
+      return;
+    }
+
+    const targetUser = await prisma.user.findUnique({
+      where: { id },
+      include: { devices: true },
+    });
+
+    if (!targetUser) {
+      res.status(404).json({ error: 'USER_NOT_FOUND', message: 'User does not exist.' });
+      return;
+    }
+
+    const deviceIds = targetUser.devices.map((d) => d.id);
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Delete user's sessions
+      await tx.userSession.deleteMany({ where: { userId: id } });
+
+      // 2. Delete cryptographic keys belonging to user's devices
+      if (deviceIds.length > 0) {
+        await tx.oneTimePrekey.deleteMany({ where: { deviceId: { in: deviceIds } } });
+        await tx.signedPrekey.deleteMany({ where: { deviceId: { in: deviceIds } } });
+        await tx.encryptionIdentityKey.deleteMany({ where: { deviceId: { in: deviceIds } } });
+        await tx.encryptedKeyBundle.deleteMany({ where: { deviceId: { in: deviceIds } } });
+        await tx.deviceKeyMetadata.deleteMany({ where: { deviceId: { in: deviceIds } } });
+      }
+
+      // 3. Delete devices
+      await tx.device.deleteMany({ where: { userId: id } });
+
+      // 4. Delete user roles
+      await tx.userRole.deleteMany({ where: { userId: id } });
+
+      // 5. Delete conversation memberships
+      await tx.conversationMember.deleteMany({ where: { userId: id } });
+
+      // 6. Delete message receipts & reactions
+      await tx.messageReceipt.deleteMany({ where: { userId: id } });
+      await tx.messageReaction.deleteMany({ where: { userId: id } });
+
+      // 7. Delete call participant records
+      await tx.callParticipant.deleteMany({ where: { userId: id } });
+
+      // 8. Nullify audit log user references if any, then record deletion
+      await tx.auditLog.updateMany({
+        where: { userId: id },
+        data: { userId: null },
+      });
+
+      // 9. Permanently remove user
+      await tx.user.delete({ where: { id } });
+
+      // 10. Record immutable audit log
+      await tx.auditLog.create({
+        data: {
+          userId: req.user!.id,
+          actorEmail: req.user!.email,
+          action: 'USER_PERMANENTLY_DELETED',
+          entityType: 'USER',
+          entityId: id,
+          ipAddress: req.ip,
+          details: JSON.stringify({
+            deletedUserEmail: targetUser.email,
+            deletedFullName: targetUser.fullName,
+          }),
+        },
+      });
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `User ${targetUser.email} was permanently deleted from the system.`,
+    });
+  } catch (err: any) {
+    console.error('Admin permanent delete user error:', err);
+    res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: err.message });
+  }
+});
+
+/**
+ * POST /api/admin/change-password
+ * Admin changes their own master password directly
+ */
+router.post('/change-password', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
+      res.status(400).json({
+        error: 'INVALID_PASSWORD',
+        message: 'Password must be at least 8 characters long.',
+      });
+      return;
+    }
+
+    const adminId = req.user!.id;
+    const passwordHash = await hashPassword(newPassword);
+
+    await prisma.user.update({
+      where: { id: adminId },
+      data: { passwordHash },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: adminId,
+        actorEmail: req.user!.email,
+        action: 'ADMIN_PASSWORD_CHANGED',
+        entityType: 'USER',
+        entityId: adminId,
+        ipAddress: req.ip,
+        details: JSON.stringify({ changedBy: req.user!.email }),
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'Admin password changed successfully.',
+    });
+  } catch (err: any) {
+    console.error('Admin change password error:', err);
+    res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: err.message });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/reset-password
+ * Admin resets a target user's password
+ */
+router.post('/users/:id/reset-password', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
+      res.status(400).json({
+        error: 'INVALID_PASSWORD',
+        message: 'Password must be at least 8 characters long.',
+      });
+      return;
+    }
+
+    const targetUser = await prisma.user.findUnique({ where: { id } });
+    if (!targetUser) {
+      res.status(404).json({ error: 'USER_NOT_FOUND', message: 'User does not exist.' });
+      return;
+    }
+
+    const passwordHash = await hashPassword(newPassword);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id },
+        data: { passwordHash },
+      });
+
+      // Revoke all active sessions on password reset
+      await tx.userSession.updateMany({
+        where: { userId: id, isValid: true },
+        data: { isValid: false, revokedAt: new Date() },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: req.user!.id,
+          actorEmail: req.user!.email,
+          action: 'USER_PASSWORD_RESET_BY_ADMIN',
+          entityType: 'USER',
+          entityId: id,
+          ipAddress: req.ip,
+          details: JSON.stringify({ targetEmail: targetUser.email }),
+        },
+      });
+    });
+
+    res.json({
+      success: true,
+      message: `Password reset successfully for ${targetUser.email}. All existing sessions were revoked.`,
+    });
+  } catch (err: any) {
+    console.error('Admin reset user password error:', err);
+    res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: err.message });
+  }
+});
+
+/**
  * POST /api/admin/users/:id/role
  * Assign or remove administrative/auditor roles
  */

@@ -3,7 +3,7 @@
 import React from 'react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
-import { Phone, Video, Search, MoreVertical, ShieldCheck } from 'lucide-react';
+import { Phone, Video, Search, MoreVertical, ShieldCheck, Trash2 } from 'lucide-react';
 
 export interface ChatHeaderProps {
   contactName: string;
@@ -13,6 +13,7 @@ export interface ChatHeaderProps {
   onVoiceCall?: () => void;
   onVideoCall?: () => void;
   onSearch?: () => void;
+  onDeleteChat?: () => void;
   onMoreOptions?: () => void;
   onOpenDetails?: () => void;
 }
@@ -25,6 +26,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   onVoiceCall,
   onVideoCall,
   onSearch,
+  onDeleteChat,
   onMoreOptions,
   onOpenDetails,
 }) => {
@@ -66,6 +68,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           onClick={onVoiceCall}
           className="text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card"
           aria-label="Start Voice Call"
+          title="Voice Call"
         >
           <Phone className="w-4 h-4" />
         </Button>
@@ -75,6 +78,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           onClick={onVideoCall}
           className="text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card"
           aria-label="Start Video Call"
+          title="Video Call"
         >
           <Video className="w-4 h-4" />
         </Button>
@@ -84,15 +88,29 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
           onClick={onSearch}
           className="text-gcs-muted hover:text-gcs-text hover:bg-gcs-card"
           aria-label="Search Messages"
+          title="Search"
         >
           <Search className="w-4 h-4" />
         </Button>
+        {onDeleteChat && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onDeleteChat}
+            className="text-gcs-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
+            aria-label="Delete Chat"
+            title="Delete Chat"
+          >
+            <Trash2 className="w-4 h-4 text-[#D94D55]" />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon"
           onClick={onMoreOptions}
           className="text-gcs-muted hover:text-gcs-text hover:bg-gcs-card"
           aria-label="More Options"
+          title="Options"
         >
           <MoreVertical className="w-4 h-4" />
         </Button>

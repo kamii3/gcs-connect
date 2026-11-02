@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ShieldCheck, Lock, UserPlus, LogIn, ArrowRight, CheckCircle2, AlertCircle, Copy } from 'lucide-react';
+import { ShieldCheck, Lock, UserPlus, LogIn, ArrowRight, CheckCircle2, AlertCircle, Copy, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 
@@ -14,6 +14,7 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [invitationToken, setInvitationToken] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -188,14 +189,26 @@ export default function RegisterPage() {
               required
             />
 
-            <Input
-              label="Password"
-              type="password"
-              placeholder="Minimum 8 characters"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            <div className="relative">
+              <Input
+                label="Password"
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Minimum 8 characters"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-[32px] text-gcs-muted hover:text-gcs-mint transition-colors p-1"
+                tabIndex={-1}
+                title={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
 
             {mode === 'register' && (
               <Input

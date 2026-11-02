@@ -26,7 +26,7 @@ describe('Phase 3: Authentication & Administration API', () => {
   it('authenticates system administrator and sets HttpOnly cookie', async () => {
     const res = await request(app).post('/api/auth/login').send({
       email: 'admin@globalcrestsolutions.com',
-      password: 'ChangeMeOnFirstLogin2026!',
+      password: 'Kamii@336',
       deviceFingerprint: 'admin-console-fp-test',
       deviceName: 'Admin MacBook Pro',
     });

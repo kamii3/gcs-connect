@@ -11,9 +11,21 @@ import { Drawer } from '@/components/ui/Drawer';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { DesignSystemShowcase } from '@/components/design-system/DesignSystemShowcase';
 import { useToast } from '@/components/ui/Toast';
-import { ShieldCheck, Lock, Palette, MessageSquare, Key, HardDrive, UserPlus, Shield, ExternalLink } from 'lucide-react';
+import {
+  ShieldCheck,
+  Lock,
+  MessageSquare,
+  Key,
+  HardDrive,
+  UserPlus,
+  LogIn,
+  LogOut,
+  Eye,
+  EyeOff,
+  Trash2,
+  AlertTriangle,
+} from 'lucide-react';
 
 const INITIAL_CONVERSATIONS: ConversationItem[] = [
   {
@@ -79,10 +91,19 @@ const INITIAL_MESSAGES: MessageProps[] = [
 ];
 
 export default function AppHome() {
+  // Authentication & Gatekeeper State
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  // Chat State
   const [conversations, setConversations] = useState<ConversationItem[]>(INITIAL_CONVERSATIONS);
   const [activeId, setActiveId] = useState<string>('c1');
   const [messages, setMessages] = useState<MessageProps[]>(INITIAL_MESSAGES);
-  const [showDesignSystem, setShowDesignSystem] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
   const [newChatEmail, setNewChatEmail] = useState('');
@@ -99,6 +120,25 @@ export default function AppHome() {
   });
 
   const { toast } = useToast();
+
+  // Check login status on page mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user) {
+            setCurrentUser(data.user);
+          }
+        }
+      } catch {
+      } finally {
+        setIsAuthLoading(false);
+      }
+    };
+    checkAuth();
+  }, []);
 
   // Auto-detect ?chatWith= from URL
   useEffect(() => {
@@ -133,10 +173,60 @@ export default function AppHome() {
     }
   }, []);
 
-  const activeContact =
-    conversations.find((c) => c.id === activeId) || conversations[0];
+  const activeContact = conversations.find((c) => c.id === activeId) ||
+    conversations[0] || {
+      id: 'default',
+      name: 'Direct Messaging',
+      status: 'offline' as const,
+    };
+
+  const handleUserLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+    setLoginLoading(true);
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: loginEmail,
+          password: loginPassword,
+          deviceFingerprint: `web-client-${Date.now()}`,
+          deviceName: 'Web Workplace Client',
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setLoginError(data.message || 'Authentication failed. Please verify credentials.');
+        setLoginLoading(false);
+        return;
+      }
+
+      setCurrentUser(data.user);
+      setLoginLoading(false);
+      toast({
+        type: 'success',
+        message: `Welcome back, ${data.user.fullName || data.user.email}!`,
+      });
+    } catch (err: any) {
+      setLoginError(err.message || 'Network error occurred.');
+      setLoginLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
+    setCurrentUser(null);
+    toast({ type: 'info', message: 'You have been signed out.' });
+  };
 
   const handleSendMessage = (text: string) => {
+    if (!text.trim()) return;
+
     const newMsg: MessageProps = {
       id: `m-${Date.now()}`,
       content: text,
@@ -160,7 +250,7 @@ export default function AppHome() {
     }, 1500);
   };
 
-  // User Message Deletion Handler
+  // User Individual Message Deletion Handler
   const handleDeleteMessage = async (id: string, deleteForEveryone: boolean) => {
     try {
       fetch(`/api/messages/${id}?mode=${deleteForEveryone ? 'everyone' : 'me'}`, {
@@ -191,6 +281,35 @@ export default function AppHome() {
         message: 'Message removed from your view.',
       });
     }
+  };
+
+  // User Entire Conversation Deletion Handler
+  const handleDeleteConversation = async (conversationId: string) => {
+    const conv = conversations.find((c) => c.id === conversationId);
+    const convName = conv ? conv.name : 'this chat';
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${convName}"? All messages and attachments in this conversation will be permanently removed.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await fetch(`/api/conversations/${conversationId}`, { method: 'DELETE' }).catch(() => {});
+    } catch {}
+
+    setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+    if (activeId === conversationId) {
+      const remaining = conversations.filter((c) => c.id !== conversationId);
+      if (remaining.length > 0) {
+        setActiveId(remaining[0].id);
+      } else {
+        setActiveId('');
+      }
+      setMessages([]);
+    }
+    toast({
+      type: 'info',
+      message: `Conversation "${convName}" was permanently deleted.`,
+    });
   };
 
   const handleStartNewChat = () => {
@@ -238,127 +357,229 @@ export default function AppHome() {
     }, 2000);
   };
 
+  // 1. Loading State
+  if (isAuthLoading) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-gcs-bg font-sans">
+        <div className="h-10 w-10 rounded-xl bg-gcs-emerald/20 border border-gcs-emerald/40 flex items-center justify-center animate-spin mb-3">
+          <ShieldCheck className="w-6 h-6 text-gcs-emerald" />
+        </div>
+        <div className="text-xs text-gcs-muted font-mono">Initializing secure cryptographic session...</div>
+      </div>
+    );
+  }
+
+  // 2. Authentication Gate: User MUST login before seeing the chat dashboard
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-gcs-bg px-4 py-8 font-sans">
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[450px] h-[350px] bg-gcs-emerald/5 blur-[120px] rounded-full pointer-events-none" />
+
+        <div className="relative w-full max-w-sm bg-gcs-card border border-gcs-border rounded-2xl shadow-2xl p-6 sm:p-7 animate-fade-in">
+          {/* Header */}
+          <div className="flex flex-col items-center text-center mb-6">
+            <div className="h-12 w-12 rounded-2xl bg-gcs-emerald/15 border border-gcs-emerald/30 flex items-center justify-center text-gcs-mint mb-3 shadow-inner">
+              <ShieldCheck className="w-7 h-7 text-gcs-emerald" />
+            </div>
+            <h1 className="text-xl font-bold text-gcs-text tracking-tight">GCS CONNECT</h1>
+            <p className="text-xs text-gcs-muted mt-1">Sign in to your encrypted workplace</p>
+          </div>
+
+          {/* Quick Demo Sign In Pills */}
+          <div className="mb-4 p-2.5 rounded-xl bg-gcs-sidebar border border-gcs-border text-xs flex flex-col gap-1.5">
+            <span className="text-[10.5px] uppercase font-semibold text-gcs-muted tracking-wider">Quick Demo Users:</span>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginEmail('alice@globalcrestsolutions.com');
+                  setLoginPassword('AliceSecurePass2026!');
+                }}
+                className="text-[11px] px-2 py-1 rounded bg-gcs-card hover:bg-gcs-card/80 text-gcs-mint border border-gcs-border font-medium transition-colors text-center"
+              >
+                Alice Walker
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginEmail('bob@globalcrestsolutions.com');
+                  setLoginPassword('BobDevOpsPass2026!');
+                }}
+                className="text-[11px] px-2 py-1 rounded bg-gcs-card hover:bg-gcs-card/80 text-gcs-mint border border-gcs-border font-medium transition-colors text-center"
+              >
+                Bob Vance
+              </button>
+            </div>
+          </div>
+
+          {loginError && (
+            <div className="mb-4 p-3 rounded-xl bg-[#D94D55]/15 border border-[#D94D55]/40 text-[#ff8e95] text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{loginError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleUserLogin} className="flex flex-col gap-3.5">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gcs-muted">Corporate Email</label>
+              <Input
+                type="email"
+                required
+                placeholder="you@globalcrestsolutions.com"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-gcs-muted">Password</label>
+              <div className="relative">
+                <Input
+                  type={showLoginPassword ? 'text' : 'password'}
+                  required
+                  placeholder="Enter your password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowLoginPassword(!showLoginPassword)}
+                  className="absolute right-3 top-2.5 text-gcs-muted hover:text-gcs-mint transition-colors p-1"
+                  tabIndex={-1}
+                  title={showLoginPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={loginLoading}
+              className="w-full mt-2 h-10 text-sm font-semibold bg-gcs-emerald hover:bg-[#00c28c]"
+            >
+              {loginLoading ? 'Authenticating...' : 'Sign In'}
+            </Button>
+          </form>
+
+          <div className="mt-5 pt-3 border-t border-gcs-border/60 text-center text-xs text-gcs-muted">
+            Don't have an account?{' '}
+            <Link href="/register" className="text-gcs-mint font-semibold hover:underline">
+              Register here
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 3. Authenticated Workplace View: Clean, Simple, Direct (No Telegram Fluff)
   return (
     <main className="h-screen w-screen flex overflow-hidden bg-gcs-bg font-sans">
       {/* Sidebar Navigation */}
       <Sidebar
         conversations={conversations}
         activeConversationId={activeId}
-        onSelectConversation={(id) => {
-          setActiveId(id);
-          setShowDesignSystem(false);
-        }}
+        onSelectConversation={(id) => setActiveId(id)}
+        onDeleteConversation={handleDeleteConversation}
         onNewChat={() => setIsNewChatModalOpen(true)}
         onOpenSettings={() => setShowDrawer(true)}
-        currentUserName="System User"
-        currentUserEmail="user@globalcrestsolutions.com"
+        currentUserName={currentUser.fullName || currentUser.email}
+        currentUserEmail={currentUser.email}
       />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col h-full bg-gcs-bg min-w-0">
-        {/* Top Control Bar */}
+        {/* Top Header Bar */}
         <div className="h-10 px-4 bg-gcs-bg border-b border-gcs-border/40 flex items-center justify-between text-xs select-none">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <span className="flex items-center gap-1.5 text-gcs-mint font-medium text-[11px]">
               <ShieldCheck className="w-3.5 h-3.5 text-gcs-emerald" />
-              <span>GCS CONNECT Production Suite</span>
+              <span>GCS CONNECT — {currentUser.fullName || currentUser.email}</span>
             </span>
-
-            <span className="hidden sm:inline-block text-gcs-border">•</span>
-
-            <Link
-              href="/admin"
-              className="hidden sm:flex items-center gap-1 text-[11px] text-gcs-mint/80 hover:text-gcs-mint font-medium hover:underline transition-colors"
-            >
-              <Shield className="w-3 h-3 text-gcs-emerald" />
-              <span>Admin Console</span>
-            </Link>
-
-            <span className="hidden sm:inline-block text-gcs-border">•</span>
-
-            <Link
-              href="/register"
-              className="hidden sm:flex items-center gap-1 text-[11px] text-gcs-muted hover:text-gcs-text transition-colors"
-            >
-              <UserPlus className="w-3 h-3 text-gcs-emerald" />
-              <span>Register New User</span>
-            </Link>
           </div>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowDesignSystem(!showDesignSystem)}
-            className="h-7 text-xs gap-1.5 text-gcs-mint hover:bg-gcs-card"
-          >
-            {showDesignSystem ? (
-              <>
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>Return to Live Chat</span>
-              </>
-            ) : (
-              <>
-                <Palette className="w-3.5 h-3.5 text-gcs-emerald" />
-                <span>Design System</span>
-              </>
-            )}
-          </Button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsNewChatModalOpen(true)}
+              className="flex items-center gap-1 text-[11px] text-gcs-mint hover:underline font-medium"
+            >
+              <UserPlus className="w-3 h-3" />
+              <span>New Chat</span>
+            </button>
+
+            <span className="text-gcs-border">•</span>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex items-center gap-1 text-[11px] text-gcs-muted hover:text-red-400 transition-colors"
+              title="Sign Out"
+            >
+              <LogOut className="w-3 h-3" />
+              <span>Sign Out</span>
+            </button>
+          </div>
         </div>
 
-        {/* View Switcher: Live Chat vs Design System Showcase */}
-        {showDesignSystem ? (
-          <div className="flex-1 overflow-y-auto">
-            <DesignSystemShowcase />
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col min-h-0">
-            {/* Chat Header */}
-            <ChatHeader
-              contactName={activeContact.name}
-              avatarSrc={activeContact.avatarSrc}
-              status={activeContact.status}
-              onVoiceCall={() => startCall('voice')}
-              onVideoCall={() => startCall('video')}
-              onSearch={() =>
-                toast({
-                  type: 'info',
-                  message: 'Local encrypted message index search active',
-                })
-              }
-              onMoreOptions={() => setShowDrawer(true)}
-              onOpenDetails={() => setShowDrawer(true)}
-            />
+        {/* Active Conversation Main Pane */}
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Chat Header */}
+          <ChatHeader
+            contactName={activeContact.name}
+            avatarSrc={activeContact.avatarSrc}
+            status={activeContact.status}
+            onVoiceCall={() => startCall('voice')}
+            onVideoCall={() => startCall('video')}
+            onDeleteChat={() => handleDeleteConversation(activeContact.id)}
+            onSearch={() =>
+              toast({
+                type: 'info',
+                message: 'Local encrypted message index search active',
+              })
+            }
+            onMoreOptions={() => setShowDrawer(true)}
+            onOpenDetails={() => setShowDrawer(true)}
+          />
 
-            {/* Chat Messages Stream */}
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col justify-end space-y-1">
-              <div className="mx-auto my-3 px-3 py-1 rounded-full bg-gcs-card/80 border border-gcs-border/60 text-[11px] text-gcs-muted text-center max-w-sm flex items-center justify-center gap-1.5 shadow-sm">
-                <Lock className="w-3 h-3 text-gcs-emerald" />
-                <span>Messages are end-to-end encrypted with X3DH and Double Ratchet.</span>
-              </div>
-
-              {messages.map((m) => (
-                <MessageBubble key={m.id} {...m} onDelete={handleDeleteMessage} />
-              ))}
+          {/* Chat Messages Stream */}
+          <div className="flex-1 overflow-y-auto p-4 flex flex-col justify-end space-y-1">
+            <div className="mx-auto my-3 px-3 py-1 rounded-full bg-gcs-card/80 border border-gcs-border/60 text-[11px] text-gcs-muted text-center max-w-sm flex items-center justify-center gap-1.5 shadow-sm">
+              <Lock className="w-3 h-3 text-gcs-emerald" />
+              <span>End-to-end encrypted with X3DH & Double Ratchet.</span>
             </div>
 
-            {/* Chat Input Bar */}
-            <ChatInput
-              onSendMessage={handleSendMessage}
-              onSendVoiceNote={() =>
-                toast({
-                  type: 'info',
-                  message: 'Audio recording buffer initialized via Web Audio API',
-                })
-              }
-              onAttachFile={(type) =>
-                toast({
-                  type: 'info',
-                  message: `Client-side encrypted ${type} upload active`,
-                })
-              }
-            />
+            {messages.length === 0 ? (
+              <div className="text-center text-xs text-gcs-muted my-auto py-8">
+                No messages in this chat yet. Send an encrypted message below.
+              </div>
+            ) : (
+              messages.map((m) => (
+                <MessageBubble key={m.id} {...m} onDelete={handleDeleteMessage} />
+              ))
+            )}
           </div>
-        )}
+
+          {/* Chat Input Bar */}
+          <ChatInput
+            onSendMessage={handleSendMessage}
+            onSendVoiceNote={() =>
+              toast({
+                type: 'info',
+                message: 'Audio recording buffer initialized via Web Audio API',
+              })
+            }
+            onAttachFile={(type) =>
+              toast({
+                type: 'info',
+                message: `Client-side encrypted ${type} upload active`,
+              })
+            }
+          />
+        </div>
       </div>
 
       {/* Start New Chat Modal */}
@@ -464,6 +685,17 @@ export default function AppHome() {
               </span>
               <span className="font-mono text-gcs-mint">IndexedDB (Encrypted)</span>
             </div>
+          </div>
+
+          <div className="pt-4 border-t border-gcs-border/60">
+            <Button
+              variant="outline"
+              onClick={handleLogout}
+              className="w-full text-xs text-red-400 border-red-500/30 hover:bg-red-500/10 flex items-center justify-center gap-1.5"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Sign Out of Session
+            </Button>
           </div>
         </div>
       </Drawer>

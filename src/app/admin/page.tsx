@@ -31,6 +31,9 @@ import {
   Link2,
   Check,
   ArrowRight,
+  Eye,
+  EyeOff,
+  Trash2,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
@@ -147,9 +150,18 @@ export default function AdminDashboardPage() {
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [adminLoginEmail, setAdminLoginEmail] = useState('admin@globalcrestsolutions.com');
-  const [adminLoginPassword, setAdminLoginPassword] = useState('ChangeMeOnFirstLogin2026!');
+  const [adminLoginPassword, setAdminLoginPassword] = useState('');
+  const [showAdminLoginPassword, setShowAdminLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
+
+  // Admin Change Password State
+  const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [showNewAdminPassword, setShowNewAdminPassword] = useState(false);
+  const [passwordChangeLoading, setPasswordChangeLoading] = useState(false);
+  const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
+  const [passwordChangeSuccess, setPasswordChangeSuccess] = useState<string | null>(null);
 
   // Users Tab State
   const [users, setUsers] = useState<UserSummary[]>([]);
@@ -444,6 +456,59 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const handleChangeAdminPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordChangeError(null);
+    setPasswordChangeSuccess(null);
+    setPasswordChangeLoading(true);
+
+    try {
+      const res = await fetch('/api/admin/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPassword: newAdminPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPasswordChangeError(data.message || 'Failed to change admin password.');
+        setPasswordChangeLoading(false);
+        return;
+      }
+      setPasswordChangeSuccess('Admin password changed successfully!');
+      setPasswordChangeLoading(false);
+      setNewAdminPassword('');
+      fetchAuditLogs();
+    } catch (err: any) {
+      setPasswordChangeError(err.message || 'Error occurred while updating password.');
+      setPasswordChangeLoading(false);
+    }
+  };
+
+  const handlePermanentDeleteUser = async (userId: string, userEmail: string) => {
+    const confirmed = window.confirm(
+      `PERMANENT ACTION: Are you sure you want to permanently delete user ${userEmail}? This will erase all their devices, E2EE cryptographic keys, sessions, and records from the database forever.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/permanent`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.message || 'Failed to permanently delete user.');
+        return;
+      }
+      alert(`User ${userEmail} was permanently removed.`);
+      setIsDetailModalOpen(false);
+      fetchUsers();
+      fetchMetrics();
+      fetchAuditLogs();
+    } catch (err: any) {
+      alert(err.message || 'Network error occurred.');
+    }
+  };
+
   if (isAuthenticated === false) {
     return (
       <div className="min-h-screen w-screen flex flex-col items-center justify-center bg-gcs-bg px-4 py-8 font-sans">
@@ -468,13 +533,13 @@ export default function AdminDashboardPage() {
             <div className="flex items-center justify-between">
               <span className="font-semibold text-gcs-mint flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
                 <KeyRound className="w-3.5 h-3.5 text-gcs-emerald" />
-                Default Admin Credentials
+                Admin Credentials
               </span>
               <button
                 type="button"
                 onClick={() => {
                   setAdminLoginEmail('admin@globalcrestsolutions.com');
-                  setAdminLoginPassword('ChangeMeOnFirstLogin2026!');
+                  setAdminLoginPassword('Kamii@336');
                 }}
                 className="text-[10.5px] px-2 py-0.5 rounded bg-gcs-emerald/20 hover:bg-gcs-emerald/30 text-gcs-mint font-medium transition-colors"
               >
@@ -488,7 +553,7 @@ export default function AdminDashboardPage() {
               </div>
               <div>
                 <span className="text-gcs-muted/60">Password:</span>{' '}
-                <span className="text-gcs-text select-all font-semibold">ChangeMeOnFirstLogin2026!</span>
+                <span className="text-gcs-text select-all font-semibold">Kamii@336</span>
               </div>
             </div>
           </div>
@@ -511,13 +576,26 @@ export default function AdminDashboardPage() {
               onChange={(e) => setAdminLoginEmail(e.target.value)}
             />
 
-            <Input
-              label="Admin Password"
-              type="password"
-              required
-              value={adminLoginPassword}
-              onChange={(e) => setAdminLoginPassword(e.target.value)}
-            />
+            <div className="relative">
+              <Input
+                label="Admin Password"
+                type={showAdminLoginPassword ? 'text' : 'password'}
+                required
+                placeholder="Enter admin password"
+                value={adminLoginPassword}
+                onChange={(e) => setAdminLoginPassword(e.target.value)}
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowAdminLoginPassword(!showAdminLoginPassword)}
+                className="absolute right-3 top-[32px] text-gcs-muted hover:text-gcs-mint transition-colors p-1"
+                tabIndex={-1}
+                title={showAdminLoginPassword ? 'Hide password' : 'Show password'}
+              >
+                {showAdminLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
 
             <Button
               type="submit"
@@ -586,6 +664,21 @@ export default function AdminDashboardPage() {
           >
             <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
             Sync
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setIsChangePasswordModalOpen(true);
+              setNewAdminPassword('');
+              setPasswordChangeSuccess(null);
+              setPasswordChangeError(null);
+            }}
+            className="flex items-center gap-1.5 text-xs border-gcs-border text-gcs-mint hover:bg-gcs-card"
+          >
+            <KeyRound className="w-3.5 h-3.5 text-gcs-emerald" />
+            Admin Password
           </Button>
 
           <Button
@@ -1014,6 +1107,16 @@ export default function AdminDashboardPage() {
                                 </>
                               )}
                             </Button>
+
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              onClick={() => handlePermanentDeleteUser(u.id, u.email)}
+                              className="text-[11px] h-7 px-2.5 bg-[#D94D55]/20 hover:bg-[#D94D55] text-[#ff8e95] hover:text-white border border-[#D94D55]/40"
+                              title="Permanently Delete User"
+                            >
+                              <Trash2 className="w-3 h-3 mr-1" /> Delete
+                            </Button>
                           </div>
                         </td>
                       </tr>
@@ -1291,14 +1394,25 @@ export default function AdminDashboardPage() {
                   <div className="text-gcs-muted font-mono">{selectedUserDetail.email}</div>
                 </div>
               </div>
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => handleRevokeSessions(selectedUserDetail.id)}
-                className="text-xs h-8"
-              >
-                Revoke All Sessions
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => handleRevokeSessions(selectedUserDetail.id)}
+                  className="text-xs h-8"
+                >
+                  Revoke All Sessions
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => handlePermanentDeleteUser(selectedUserDetail.id, selectedUserDetail.email)}
+                  className="text-xs h-8 bg-[#D94D55] hover:bg-[#b03038] text-white"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />
+                  Delete User Permanently
+                </Button>
+              </div>
             </div>
 
             {/* Devices & Keys */}
@@ -1508,6 +1622,80 @@ export default function AdminDashboardPage() {
             >
               {inviteLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
               Generate Link
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ==================================================================== */}
+      {/* MODAL 4: CHANGE ADMIN MASTER PASSWORD */}
+      {/* ==================================================================== */}
+      <Modal
+        isOpen={isChangePasswordModalOpen}
+        onClose={() => setIsChangePasswordModalOpen(false)}
+        title="Change Administrator Master Password"
+        description="Update your admin master credentials. The new password hash will be committed immediately with Argon2id."
+      >
+        <form onSubmit={handleChangeAdminPassword} className="space-y-4">
+          {passwordChangeError && (
+            <div className="p-3 rounded-xl bg-[#D94D55]/15 border border-[#D94D55]/40 text-[#ff8e95] text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{passwordChangeError}</span>
+            </div>
+          )}
+
+          {passwordChangeSuccess && (
+            <div className="p-3.5 rounded-xl bg-gcs-emerald/15 border border-gcs-emerald/40 text-gcs-mint text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-gcs-emerald" />
+              <span>{passwordChangeSuccess}</span>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-gcs-muted">New Master Password (Min 8 chars)</label>
+            <div className="relative">
+              <Input
+                type={showNewAdminPassword ? 'text' : 'password'}
+                required
+                placeholder="Enter new strong password"
+                value={newAdminPassword}
+                onChange={(e) => setNewAdminPassword(e.target.value)}
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewAdminPassword(!showNewAdminPassword)}
+                className="absolute right-3 top-2.5 text-gcs-muted hover:text-gcs-mint transition-colors p-1"
+                tabIndex={-1}
+                title={showNewAdminPassword ? 'Hide password' : 'Show password'}
+              >
+                {showNewAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-gcs-border/60">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setIsChangePasswordModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={passwordChangeLoading || !newAdminPassword.trim()}
+              className="bg-gcs-emerald hover:bg-[#00c28c] flex items-center gap-1.5"
+            >
+              {passwordChangeLoading ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <KeyRound className="w-3.5 h-3.5" />
+              )}
+              Update Password
             </Button>
           </div>
         </form>

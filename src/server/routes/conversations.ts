@@ -9,6 +9,7 @@ import { z } from 'zod';
 import prisma from '@/lib/db';
 import { authenticate } from '@/server/middleware/auth';
 import { purgeExpiredMessages } from '@/server/services/message-cleanup';
+import { io } from '@/server/server';
 
 const router = Router();
 
@@ -553,6 +554,96 @@ router.post('/:id/clear', authenticate, async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('[ClearConversationError]', error);
+    res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: error.message });
+  }
+});
+
+/**
+ * DELETE /api/conversations/:id
+ * Permanently delete entire conversation and all its messages
+ */
+router.delete('/:id', authenticate, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const callerId = req.user!.id;
+
+    // Check membership
+    const member = await prisma.conversationMember.findUnique({
+      where: { conversationId_userId: { conversationId: id, userId: callerId } },
+    });
+
+    if (!member) {
+      res.status(403).json({ error: 'FORBIDDEN', message: 'You are not a member of this conversation.' });
+      return;
+    }
+
+    const conversation = await prisma.conversation.findUnique({
+      where: { id },
+      include: { messages: true },
+    });
+
+    if (!conversation) {
+      res.status(404).json({ error: 'NOT_FOUND', message: 'Conversation does not exist.' });
+      return;
+    }
+
+    const messageIds = conversation.messages.map((m) => m.id);
+
+    await prisma.$transaction(async (tx) => {
+      if (messageIds.length > 0) {
+        // Delete message attachments
+        await tx.attachment.deleteMany({
+          where: { messageId: { in: messageIds } },
+        });
+
+        // Delete message receipts
+        await tx.messageReceipt.deleteMany({
+          where: { messageId: { in: messageIds } },
+        });
+
+        // Delete message reactions
+        await tx.messageReaction.deleteMany({
+          where: { messageId: { in: messageIds } },
+        });
+
+        // Delete all messages in the conversation
+        await tx.message.deleteMany({
+          where: { conversationId: id },
+        });
+      }
+
+      // Delete call records in this conversation if any
+      const calls = await tx.call.findMany({ where: { conversationId: id } });
+      const callIds = calls.map((c) => c.id);
+      if (callIds.length > 0) {
+        await tx.callParticipant.deleteMany({ where: { callId: { in: callIds } } });
+        await tx.call.deleteMany({ where: { conversationId: id } });
+      }
+
+      // Delete conversation members
+      await tx.conversationMember.deleteMany({
+        where: { conversationId: id },
+      });
+
+      // Delete conversation
+      await tx.conversation.delete({
+        where: { id },
+      });
+    });
+
+    if (io) {
+      io.to(`conversation:${id}`).emit('conversation:deleted', {
+        conversationId: id,
+        deletedByUserId: callerId,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Conversation and all messages were permanently deleted.',
+    });
+  } catch (error: any) {
+    console.error('[DeleteConversationError]', error);
     res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: error.message });
   }
 });
