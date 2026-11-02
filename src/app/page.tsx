@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { Sidebar, ConversationItem } from '../components/chat/Sidebar';
 import { ChatHeader } from '../components/chat/ChatHeader';
@@ -21,6 +21,7 @@ import {
   bufferToBase64,
 } from '../lib/crypto';
 import { realtimeSocket } from '../lib/socket/client';
+import { WebRtcManager } from '../lib/webrtc/webrtc-manager';
 import { playSound } from '../lib/audio';
 import { cn } from '../lib/utils';
 import {
@@ -96,6 +97,13 @@ export default function AppHome() {
     callType: 'voice',
     status: 'outgoing',
   });
+
+  // WebRTC Calling Engine State & Media Refs
+  const rtcManagerRef = useRef<WebRtcManager | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
+  const [activeCallerName, setActiveCallerName] = useState<string>('Peer');
 
   const { toast } = useToast();
 
@@ -275,6 +283,46 @@ export default function AppHome() {
 
     realtimeSocket.connect('', undefined);
 
+    // Initialize WebRTC Calling Manager
+    const rawSocket = realtimeSocket.getSocket();
+    if (rawSocket) {
+      rtcManagerRef.current = new WebRtcManager({
+        socket: rawSocket,
+        onStateChange: (state) => {
+          if (state === 'RINGING') {
+            playSound('ringtone');
+            setCallState((prev) => ({ ...prev, isOpen: true, status: 'incoming' }));
+          } else if (state === 'CONNECTED') {
+            playSound('call_connect');
+            setCallState((prev) => ({ ...prev, isOpen: true, status: 'connected' }));
+            toast({ type: 'success', message: 'DTLS-SRTP P2P Encrypted Call Connected!' });
+          } else if (state === 'ENDED' || state === 'IDLE') {
+            playSound('call_hangup');
+            setCallState((prev) => ({ ...prev, isOpen: false }));
+          }
+        },
+        onLocalStream: (stream) => {
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = stream;
+          }
+        },
+        onRemoteStream: (stream) => {
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = stream;
+          }
+          if (remoteAudioRef.current) {
+            remoteAudioRef.current.srcObject = stream;
+            remoteAudioRef.current.play().catch(() => {});
+          }
+        },
+        onError: (err) => {
+          console.error('[WebRtcError]', err);
+          toast({ type: 'error', message: err.message || 'Call connection error.' });
+        },
+      });
+    }
+
+    // 1. Presence updates
     const unsubPresence = realtimeSocket.onPresence(({ userId, status }) => {
       setOnlineUserIds((prev) => {
         const next = new Set(prev);
@@ -287,6 +335,37 @@ export default function AppHome() {
       });
     });
 
+    // 2. Incoming call listener
+    const unsubIncomingCall = realtimeSocket.onIncomingCall((data) => {
+      rtcManagerRef.current?.handleIncomingCall(data.callId, data.initiator.id, data.callType);
+      setActiveCallerName(data.initiator.fullName || data.initiator.displayName || 'Peer');
+      setCallState({
+        isOpen: true,
+        callType: data.callType === 'VIDEO' ? 'video' : 'voice',
+        status: 'incoming',
+      });
+      playSound('ringtone');
+    });
+
+    // 3. Media ready notification listener
+    const unsubMediaReady = realtimeSocket.onMediaReady(async (event) => {
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id === event.messageId && m.attachment) {
+            return {
+              ...m,
+              attachment: {
+                ...m.attachment,
+                id: event.attachmentId,
+              },
+            };
+          }
+          return m;
+        })
+      );
+    });
+
+    // 4. Read receipts updates
     const unsubReceipt = realtimeSocket.onReceipt((receipt: any) => {
       if (!receipt) return;
       const receiptStatus = receipt.status === 'READ' ? 'read' : 'delivered';
@@ -310,6 +389,7 @@ export default function AppHome() {
       );
     });
 
+    // 5. Incoming message listener
     const unsubMessage = realtimeSocket.onMessage(async (msg: any) => {
       if (!msg) return;
 
@@ -340,6 +420,10 @@ export default function AppHome() {
                 fileName: parsed.fileName || 'Encrypted File',
                 fileSizeBytes: parsed.fileSizeBytes,
                 mimeType: parsed.mimeType || 'application/octet-stream',
+                mediaKey: parsed.mediaKey,
+                iv: parsed.iv,
+                authTag: parsed.authTag,
+                ciphertextSha256: parsed.ciphertextSha256,
               };
               text = '';
             } catch {}
@@ -363,6 +447,21 @@ export default function AppHome() {
           if (prev.some((m) => m.id === msg.id)) return prev;
           return [...prev, newMsg];
         });
+
+        // Auto-decrypt image/video/audio in background for preview
+        if (attachmentObj?.mediaKey) {
+          decryptAndCreateBlob(attachmentObj).then((blobUrl) => {
+            if (blobUrl) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === msg.id && m.attachment
+                    ? { ...m, attachment: { ...m.attachment, url: blobUrl } }
+                    : m
+                )
+              );
+            }
+          });
+        }
 
         // Send READ receipt
         if (!isMe) {
@@ -389,6 +488,8 @@ export default function AppHome() {
 
     return () => {
       unsubPresence();
+      unsubIncomingCall();
+      unsubMediaReady();
       unsubReceipt();
       unsubMessage();
     };
@@ -401,6 +502,62 @@ export default function AppHome() {
     }
   }, [activeId]);
 
+  // Decrypt media ciphertext and return accessible Blob URL
+  const decryptAndCreateBlob = async (att: any): Promise<string | undefined> => {
+    try {
+      const res = await fetch(`/api/media/${att.id}`);
+      if (!res.ok) return undefined;
+      const cipherBuffer = await res.arrayBuffer();
+      if (att.mediaKey && att.iv && att.authTag) {
+        const decrypted = await decryptMediaBuffer(cipherBuffer, {
+          mediaKey: att.mediaKey,
+          iv: att.iv,
+          authTag: att.authTag,
+          ciphertextSha256: att.ciphertextSha256,
+        });
+        const blob = new Blob([decrypted], { type: att.mimeType || 'application/octet-stream' });
+        return URL.createObjectURL(blob);
+      }
+    } catch (e) {
+      console.warn('Auto-decrypt error:', e);
+    }
+    return undefined;
+  };
+
+  // On-demand decrypt & download attachment handler
+  const handleDownloadAttachment = async (attachment: any) => {
+    try {
+      toast({ type: 'info', message: `Decrypting ${attachment.fileName}...` });
+      let blobUrl = attachment.url;
+      if (!blobUrl) {
+        blobUrl = await decryptAndCreateBlob(attachment);
+      }
+      if (!blobUrl) {
+        throw new Error('Encrypted file could not be retrieved from server.');
+      }
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.attachment?.id === attachment.id || m.id === attachment.id
+            ? { ...m, attachment: { ...m.attachment!, url: blobUrl } }
+            : m
+        )
+      );
+
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = attachment.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      toast({ type: 'success', message: `${attachment.fileName} downloaded!` });
+    } catch (err: any) {
+      console.error('[DownloadError]', err);
+      toast({ type: 'error', message: err.message || 'Download failed.' });
+    }
+  };
+
   // Fetch and decrypt messages when activeId changes
   useEffect(() => {
     if (!activeId) {
@@ -408,7 +565,6 @@ export default function AppHome() {
       return;
     }
 
-    // Immediately clear unread count for this conversation in UI
     setConversations((prev) =>
       prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c))
     );
@@ -452,28 +608,30 @@ export default function AppHome() {
                       fileName: parsed.fileName || 'Encrypted File',
                       fileSizeBytes: parsed.fileSizeBytes,
                       mimeType: parsed.mimeType || 'application/octet-stream',
+                      mediaKey: parsed.mediaKey,
+                      iv: parsed.iv,
+                      authTag: parsed.authTag,
+                      ciphertextSha256: parsed.ciphertextSha256,
                     };
 
-                    // Auto-decrypt image, video, or documents for inline viewing/download
-                    if (attachmentRecord?.id) {
-                      try {
-                        const mediaRes = await fetch(`/api/media/${attachmentRecord.id}`);
-                        if (mediaRes.ok) {
-                          const cipherBuffer = await mediaRes.arrayBuffer();
-                          const decryptedBuffer = await decryptMediaBuffer(cipherBuffer, {
-                            mediaKey: parsed.mediaKey,
-                            iv: parsed.iv,
-                            authTag: parsed.authTag,
-                            ciphertextSha256: parsed.ciphertextSha256,
-                          });
-                          const blob = new Blob([decryptedBuffer], {
-                            type: parsed.mimeType || 'application/octet-stream',
-                          });
-                          attachmentObj.url = URL.createObjectURL(blob);
-                        }
-                      } catch (decErr) {
-                        console.warn('Failed to decrypt attachment:', decErr);
+                    // Auto-decrypt for immediate display
+                    try {
+                      const mediaRes = await fetch(`/api/media/${attId}`);
+                      if (mediaRes.ok) {
+                        const cipherBuffer = await mediaRes.arrayBuffer();
+                        const decryptedBuffer = await decryptMediaBuffer(cipherBuffer, {
+                          mediaKey: parsed.mediaKey,
+                          iv: parsed.iv,
+                          authTag: parsed.authTag,
+                          ciphertextSha256: parsed.ciphertextSha256,
+                        });
+                        const blob = new Blob([decryptedBuffer], {
+                          type: parsed.mimeType || 'application/octet-stream',
+                        });
+                        attachmentObj.url = URL.createObjectURL(blob);
                       }
+                    } catch (decErr) {
+                      console.warn('Auto-decrypt error:', decErr);
                     }
 
                     text = '';
@@ -492,7 +650,6 @@ export default function AppHome() {
                 else if (hasDelivered) status = 'delivered';
               }
 
-              // Send read receipt if incoming unread message
               if (
                 !isMe &&
                 !m.receipts?.some((r: any) => r.userId === currentUser?.id && r.status === 'READ')
@@ -525,7 +682,6 @@ export default function AppHome() {
           );
 
           if (isCurrent) {
-            // API returns messages ordered descending (newest first); reverse to render chronologically
             setMessages(loaded.reverse());
           }
         }
@@ -987,21 +1143,84 @@ export default function AppHome() {
     }
   };
 
-  const startCall = (type: 'voice' | 'video') => {
-    playSound('ringtone');
+  const startCall = async (type: 'voice' | 'video') => {
+    if (!activeContact?.peerUserId || !activeId) {
+      toast({
+        type: 'error',
+        message: 'Direct chat required to start an encrypted P2P call.',
+      });
+      return;
+    }
+
+    // Permission Check & Device Access
+    try {
+      const streamTest = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: type === 'video',
+      });
+      streamTest.getTracks().forEach((track) => track.stop());
+    } catch (permErr: any) {
+      console.warn('Microphone/Camera permission error:', permErr);
+      toast({
+        type: 'error',
+        message: 'Microphone & camera permission required. Please allow access in browser.',
+      });
+      return;
+    }
+
+    setActiveCallerName(activeContact.name);
     setCallState({
       isOpen: true,
       callType: type,
       status: 'outgoing',
     });
-    setTimeout(() => {
-      playSound('call_connect');
-      setCallState((prev) => ({ ...prev, status: 'connected' }));
-      toast({
-        type: 'info',
-        message: `Connected via DTLS-SRTP P2P stream`,
-      });
-    }, 2000);
+    playSound('ringtone');
+
+    try {
+      const rawSocket = realtimeSocket.getSocket();
+      if (rawSocket && rtcManagerRef.current) {
+        rtcManagerRef.current.setSocket(rawSocket);
+      }
+      await rtcManagerRef.current?.startCall(
+        activeId,
+        activeContact.peerUserId,
+        type === 'video' ? 'VIDEO' : 'VOICE'
+      );
+    } catch (err: any) {
+      console.error('[StartCallFailed]', err);
+      playSound('call_hangup');
+      setCallState((prev) => ({ ...prev, isOpen: false }));
+      toast({ type: 'error', message: err.message || 'Call failed to connect.' });
+    }
+  };
+
+  const handleAcceptCall = async () => {
+    try {
+      await rtcManagerRef.current?.acceptIncomingCall();
+    } catch (err: any) {
+      console.error('[AcceptCallFailed]', err);
+      toast({ type: 'error', message: err.message || 'Failed to accept call.' });
+    }
+  };
+
+  const handleRejectCall = () => {
+    playSound('call_hangup');
+    rtcManagerRef.current?.rejectIncomingCall();
+    setCallState((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  const handleEndCall = () => {
+    playSound('call_hangup');
+    rtcManagerRef.current?.hangup();
+    setCallState((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  const handleToggleMute = (muted: boolean) => {
+    rtcManagerRef.current?.toggleAudio(!muted);
+  };
+
+  const handleToggleVideo = (videoOff: boolean) => {
+    rtcManagerRef.current?.toggleVideo(!videoOff);
   };
 
   // 1. Loading State
@@ -1276,8 +1495,8 @@ export default function AppHome() {
               onOpenDetails={() => setShowDrawer(true)}
             />
 
-            {/* Chat Messages Stream with authentic WhatsApp doodle wallpaper */}
-            <div className="flex-1 overflow-y-auto p-2.5 sm:p-4 flex flex-col justify-end space-y-1 scroll-touch chat-doodle-bg">
+            {/* Chat Messages Stream with cyber-obsidian & emerald theme */}
+            <div className="flex-1 overflow-y-auto p-2.5 sm:p-4 flex flex-col justify-end space-y-1 scroll-touch gcs-cyber-bg">
               <div className="mx-auto my-2 sm:my-3 px-3 py-1 rounded-full bg-gcs-card/80 border border-gcs-border/60 text-[10px] sm:text-[11px] text-gcs-muted text-center max-w-sm flex items-center justify-center gap-1.5 shadow-sm shrink-0">
                 <Lock className="w-3 h-3 text-gcs-emerald shrink-0" />
                 <span className="truncate">End-to-end encrypted with Web Crypto AES-256-GCM.</span>
@@ -1294,7 +1513,12 @@ export default function AppHome() {
                 </div>
               ) : (
                 messages.map((m) => (
-                  <MessageBubble key={m.id} {...m} onDelete={handleDeleteMessage} />
+                  <MessageBubble
+                    key={m.id}
+                    {...m}
+                    onDelete={handleDeleteMessage}
+                    onDownloadAttachment={handleDownloadAttachment}
+                  />
                 ))
               )}
             </div>
@@ -1524,23 +1748,23 @@ export default function AppHome() {
         </div>
       </Drawer>
 
+      {/* Hidden Remote Audio Element for DTLS-SRTP WebRTC Audio playback */}
+      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
+
       {/* Voice & Video Call Modal */}
       <CallModal
         isOpen={callState.isOpen}
         callType={callState.callType}
         status={callState.status}
-        contactName={activeContact ? activeContact.name : 'Peer'}
+        contactName={activeCallerName || (activeContact ? activeContact.name : 'Peer')}
         avatarSrc={activeContact ? activeContact.avatarSrc : undefined}
-        onEndCall={() => {
-          playSound('call_hangup');
-          setCallState((prev) => ({ ...prev, isOpen: false }));
-          toast({ type: 'warning', message: 'Call ended' });
-        }}
-        onReject={() => {
-          playSound('call_hangup');
-          setCallState((prev) => ({ ...prev, isOpen: false }));
-          toast({ type: 'error', message: 'Call rejected' });
-        }}
+        localVideoRef={localVideoRef}
+        remoteVideoRef={remoteVideoRef}
+        onAccept={handleAcceptCall}
+        onReject={handleRejectCall}
+        onEndCall={handleEndCall}
+        onToggleMute={handleToggleMute}
+        onToggleVideo={handleToggleVideo}
       />
     </main>
   );

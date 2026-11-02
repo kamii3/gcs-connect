@@ -48,18 +48,21 @@ body {
 
 /* Glassmorphism Surface Utility */
 .glass-panel {
-  background: rgba(28, 36, 32, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(49, 70, 58, 0.4);
+  background: rgba(14, 23, 19, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(0, 168, 121, 0.2);
 }
 
-/* Authentic WhatsApp Doodle Chat Background */
-.chat-doodle-bg {
-  background-color: #0b141a;
-  background-image: linear-gradient(rgba(11, 20, 26, 0.93), rgba(11, 20, 26, 0.93)), url('/images/whatsapp_doodle.png');
-  background-repeat: repeat;
-  background-size: 420px;
+/* Distinct GCS Cyber-Obsidian Dynamic Mesh Background */
+.gcs-cyber-bg {
+  background-color: #070c0a;
+  background-image:
+    radial-gradient(circle at 50% 0%, rgba(0, 168, 121, 0.09) 0%, transparent 65%),
+    radial-gradient(circle at 100% 100%, rgba(0, 240, 255, 0.04) 0%, transparent 45%),
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
 }
 
 /* Mobile Safe Area & Touch Enhancements */

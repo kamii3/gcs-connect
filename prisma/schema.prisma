@@ -291,7 +291,8 @@ model Message {
 model Attachment {
   id                   String   @id @default(uuid())
   messageId            String   @map("message_id")
-  storagePath          String   @unique @map("storage_path")
+  storagePath          String?  @map("storage_path")
+  ciphertextBase64     String?  @db.LongText @map("ciphertext_base64")
   encryptedMimeType    String   @map("encrypted_mime_type")
   fileSizeBytes        BigInt   @map("file_size_bytes")
   ciphertextSha256     String   @map("ciphertext_sha256")

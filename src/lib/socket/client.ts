@@ -145,6 +145,33 @@ export class RealtimeSocketClient {
   }
 
   /**
+   * Listen for media ready notifications
+   */
+  public onMediaReady(
+    callback: (event: { messageId: string; attachmentId: string; fileSizeBytes?: number; ciphertextSha256?: string }) => void
+  ): () => void {
+    this.socket?.on('media:ready', callback);
+    return () => this.socket?.off('media:ready', callback);
+  }
+
+  /**
+   * Listen for incoming voice/video calls
+   */
+  public onIncomingCall(
+    callback: (event: { callId: string; conversationId: string; callType: 'VOICE' | 'VIDEO'; initiator: any }) => void
+  ): () => void {
+    this.socket?.on('call:incoming', callback);
+    return () => this.socket?.off('call:incoming', callback);
+  }
+
+  /**
+   * Get underlying raw Socket.IO instance
+   */
+  public getSocket(): Socket | null {
+    return this.socket;
+  }
+
+  /**
    * Listen for presence updates (ONLINE / OFFLINE)
    */
   public onPresence(

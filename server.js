@@ -3364,27 +3364,41 @@ router7.post("/upload", authenticate, async (req, res) => {
       });
       return;
     }
-    await import_promises.default.mkdir(STORAGE_DIR, { recursive: true });
     const attachmentId = import_crypto2.default.randomUUID();
-    const filePath = import_path.default.join(STORAGE_DIR, `${attachmentId}.bin`);
-    await import_promises.default.writeFile(filePath, cipherBuffer);
+    let filePath = null;
     let thumbPath = null;
-    if (thumbnailCiphertextBase64) {
-      const thumbBuffer = Buffer.from(thumbnailCiphertextBase64, "base64");
-      thumbPath = import_path.default.join(STORAGE_DIR, `${attachmentId}_thumb.bin`);
-      await import_promises.default.writeFile(thumbPath, thumbBuffer);
+    try {
+      await import_promises.default.mkdir(STORAGE_DIR, { recursive: true });
+      filePath = import_path.default.join(STORAGE_DIR, `${attachmentId}.bin`);
+      await import_promises.default.writeFile(filePath, cipherBuffer);
+      if (thumbnailCiphertextBase64) {
+        const thumbBuffer = Buffer.from(thumbnailCiphertextBase64, "base64");
+        thumbPath = import_path.default.join(STORAGE_DIR, `${attachmentId}_thumb.bin`);
+        await import_promises.default.writeFile(thumbPath, thumbBuffer);
+      }
+    } catch (diskErr) {
+      console.warn("[DiskCacheWarning] Continuing with database ciphertext storage:", diskErr);
     }
     const attachment = await db_default.attachment.create({
       data: {
         id: attachmentId,
         messageId,
-        storagePath: filePath,
+        storagePath: filePath || `db://${attachmentId}`,
+        ciphertextBase64,
         encryptedMimeType,
         fileSizeBytes: BigInt(cipherBuffer.length),
         ciphertextSha256: computedSha,
         thumbnailStoragePath: thumbPath
       }
     });
+    if (io) {
+      io.to(`conversation:${message.conversationId}`).emit("media:ready", {
+        messageId,
+        attachmentId: attachment.id,
+        fileSizeBytes: Number(attachment.fileSizeBytes),
+        ciphertextSha256: attachment.ciphertextSha256
+      });
+    }
     res.status(201).json({
       success: true,
       attachment: {
@@ -3405,8 +3419,13 @@ router7.get("/:id", authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     const callerId = req.user.id;
-    const attachment = await db_default.attachment.findUnique({
-      where: { id },
+    const attachment = await db_default.attachment.findFirst({
+      where: {
+        OR: [
+          { id },
+          { messageId: id }
+        ]
+      },
       include: {
         message: {
           include: {
@@ -3433,13 +3452,21 @@ router7.get("/:id", authenticate, async (req, res) => {
       });
       return;
     }
-    try {
-      await import_promises.default.access(attachment.storagePath);
-    } catch {
-      res.status(404).json({ error: "FILE_MISSING", message: "Encrypted storage file is missing on host." });
+    let fileBuffer = null;
+    if (attachment.ciphertextBase64) {
+      fileBuffer = Buffer.from(attachment.ciphertextBase64, "base64");
+    } else if (attachment.storagePath) {
+      try {
+        fileBuffer = await import_promises.default.readFile(attachment.storagePath);
+      } catch {
+        res.status(404).json({ error: "FILE_MISSING", message: "Encrypted storage file is missing on host." });
+        return;
+      }
+    }
+    if (!fileBuffer) {
+      res.status(404).json({ error: "FILE_EMPTY", message: "Encrypted payload is empty or unavailable." });
       return;
     }
-    const fileBuffer = await import_promises.default.readFile(attachment.storagePath);
     res.setHeader("Content-Type", "application/octet-stream");
     res.setHeader("X-Ciphertext-SHA256", attachment.ciphertextSha256);
     res.setHeader("X-Encrypted-MIME", attachment.encryptedMimeType);

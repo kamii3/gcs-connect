@@ -1,5 +1,8 @@
+'use client';
+
 import React, { useState } from 'react';
 import { cn, formatChatTime } from '@/lib/utils';
+import { AudioPlayer } from './AudioPlayer';
 import {
   Check,
   CheckCheck,
@@ -7,12 +10,16 @@ import {
   Lock,
   Trash2,
   Copy,
-  MoreVertical,
   Ban,
   FileText,
   Download,
   Image as ImageIcon,
-  Paperclip,
+  ExternalLink,
+  X,
+  Maximize2,
+  FileArchive,
+  FileCode,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 export interface MessageAttachment {
@@ -21,6 +28,7 @@ export interface MessageAttachment {
   fileSizeBytes?: number;
   mimeType: string;
   url?: string;
+  ciphertextSha256?: string;
 }
 
 export interface MessageProps {
@@ -43,7 +51,11 @@ export interface MessageProps {
     hasReacted: boolean;
   }>;
   onDelete?: (id: string, deleteForEveryone: boolean) => void;
+  onDownloadAttachment?: (attachment: MessageAttachment) => void;
 }
+
+// URL extraction regex
+const URL_REGEX = /(https?:\/\/[^\s]+)/g;
 
 export const MessageBubble: React.FC<MessageProps> = ({
   id,
@@ -57,17 +69,19 @@ export const MessageBubble: React.FC<MessageProps> = ({
   replyTo,
   reactions = [],
   onDelete,
+  onDownloadAttachment,
 }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
 
-  // WhatsApp-standard read receipts: single grey (sent), double grey (delivered), double bright blue (read)
+  // Modern GCS neon status ticks
   const statusIcons = {
-    sending: <Clock className="w-3 h-3 text-gcs-muted animate-spin" />,
-    sent: <Check className="w-3.5 h-3.5 text-gcs-muted" />,
-    delivered: <CheckCheck className="w-3.5 h-3.5 text-gcs-muted" />,
-    read: <CheckCheck className="w-3.5 h-3.5 text-[#34B7F1]" />,
+    sending: <Clock className="w-3 h-3 text-emerald-400/60 animate-spin" />,
+    sent: <Check className="w-3.5 h-3.5 text-slate-400" />,
+    delivered: <CheckCheck className="w-3.5 h-3.5 text-slate-400" />,
+    read: <CheckCheck className="w-3.5 h-3.5 text-[#00F0FF]" />,
   };
 
   const handleCopy = (e: React.MouseEvent) => {
@@ -86,202 +100,388 @@ export const MessageBubble: React.FC<MessageProps> = ({
 
   const isImage = attachment?.mimeType.startsWith('image/');
   const isVideo = attachment?.mimeType.startsWith('video/');
+  const isAudio = attachment?.mimeType.startsWith('audio/');
+
+  // Parse links inside content
+  const detectedUrls = content ? content.match(URL_REGEX) : null;
+  const firstUrl = detectedUrls ? detectedUrls[0] : null;
+
+  const handleDownloadClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (attachment) {
+      if (attachment.url) {
+        // Direct download using blob URL
+        const a = document.createElement('a');
+        a.href = attachment.url;
+        a.download = attachment.fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else if (onDownloadAttachment) {
+        onDownloadAttachment(attachment);
+      }
+    }
+  };
+
+  const getDocumentIcon = (fileName: string, mime: string) => {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    if (ext === 'zip' || ext === 'tar' || ext === 'gz' || ext === 'rar') {
+      return <FileArchive className="w-5 h-5 text-amber-400" />;
+    }
+    if (ext === 'json' || ext === 'js' || ext === 'ts' || ext === 'html' || ext === 'py') {
+      return <FileCode className="w-5 h-5 text-blue-400" />;
+    }
+    if (ext === 'xls' || ext === 'xlsx' || ext === 'csv') {
+      return <FileSpreadsheet className="w-5 h-5 text-emerald-400" />;
+    }
+    return <FileText className="w-5 h-5 text-emerald-300" />;
+  };
 
   return (
-    <div
-      className={cn(
-        'relative flex w-full my-1 animate-fade-in group select-text',
-        isSentByMe ? 'justify-end' : 'justify-start'
-      )}
-    >
-      {/* Quick Action Toolbar (appears on hover or on mobile tap) */}
-      {!isDeletedForEveryone && (
-        <div
-          className={cn(
-            'absolute top-0 -translate-y-2.5 flex items-center gap-1 z-10 px-2 py-1 rounded-full bg-gcs-card/95 border border-gcs-border shadow-lg transition-all duration-200',
-            isSentByMe ? 'right-2' : 'left-2',
-            showActions
-              ? 'opacity-100 pointer-events-auto scale-100'
-              : 'opacity-0 pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto'
-          )}
-        >
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="p-1 hover:text-gcs-mint text-gcs-muted rounded transition-colors active:scale-90"
-            title={copied ? 'Copied!' : 'Copy Message'}
+    <>
+      <div
+        className={cn(
+          'relative flex w-full my-1 animate-fade-in group select-text',
+          isSentByMe ? 'justify-end' : 'justify-start'
+        )}
+      >
+        {/* Quick Action Toolbar */}
+        {!isDeletedForEveryone && (
+          <div
+            className={cn(
+              'absolute top-0 -translate-y-3 flex items-center gap-1 z-10 px-2 py-1 rounded-full bg-slate-900/95 border border-emerald-500/30 shadow-lg transition-all duration-200 backdrop-blur-md',
+              isSentByMe ? 'right-2' : 'left-2',
+              showActions
+                ? 'opacity-100 pointer-events-auto scale-100'
+                : 'opacity-0 pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto'
+            )}
           >
-            <Copy className="w-3.5 h-3.5" />
-          </button>
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="p-1 hover:text-emerald-300 text-slate-400 rounded transition-colors active:scale-90"
+              title={copied ? 'Copied!' : 'Copy Text'}
+            >
+              <Copy className="w-3.5 h-3.5" />
+            </button>
 
-          {onDelete && (
-            <div className="relative">
+            {attachment && (
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowMenu(!showMenu);
-                }}
-                className="p-1 hover:text-[#D94D55] text-gcs-muted rounded transition-colors active:scale-90"
-                title="Delete Message"
+                onClick={handleDownloadClick}
+                className="p-1 hover:text-emerald-300 text-slate-400 rounded transition-colors active:scale-90"
+                title="Download Attachment"
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <Download className="w-3.5 h-3.5" />
               </button>
+            )}
 
-              {showMenu && (
-                <div
-                  className={cn(
-                    'absolute bottom-full mb-1 w-44 bg-gcs-card border border-gcs-border rounded-xl shadow-2xl py-1 text-xs z-50 flex flex-col',
-                    isSentByMe ? 'right-0' : 'left-0'
-                  )}
-                  onClick={(e) => e.stopPropagation()}
+            {onDelete && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMenu(!showMenu);
+                  }}
+                  className="p-1 hover:text-red-400 text-slate-400 rounded transition-colors active:scale-90"
+                  title="Delete Message"
                 >
-                  {isSentByMe && (
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+
+                {showMenu && (
+                  <div
+                    className={cn(
+                      'absolute bottom-full mb-1 w-44 bg-slate-900/95 border border-emerald-500/30 rounded-xl shadow-2xl py-1 text-xs z-50 flex flex-col backdrop-blur-md',
+                      isSentByMe ? 'right-0' : 'left-0'
+                    )}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {isSentByMe && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMenu(false);
+                          onDelete(id, true);
+                        }}
+                        className="px-3 py-2 text-left hover:bg-red-500/20 text-red-300 flex items-center gap-2 transition-colors border-b border-emerald-500/10"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete for everyone</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
                         setShowMenu(false);
-                        onDelete(id, true);
+                        onDelete(id, false);
                       }}
-                      className="px-3 py-2 text-left hover:bg-gcs-sidebar text-[#D94D55] flex items-center gap-2 transition-colors"
+                      className="px-3 py-2 text-left hover:bg-slate-800 text-slate-300 flex items-center gap-2 transition-colors"
                     >
-                      <Ban className="w-3.5 h-3.5" />
-                      <span>Delete for everyone</span>
+                      <Trash2 className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Delete for me</span>
                     </button>
-                  )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Distinct GCS Cyber-Emerald Message Bubble */}
+        <div
+          onClick={() => setShowActions((prev) => !prev)}
+          className={cn(
+            'relative max-w-[88%] sm:max-w-[72%] px-3.5 py-2.5 rounded-2xl shadow-md text-sm border cursor-pointer active:brightness-105 transition-all overflow-hidden break-words [overflow-wrap:anywhere]',
+            isDeletedForEveryone
+              ? 'bg-slate-900/60 text-slate-400 italic border-emerald-500/10'
+              : isSentByMe
+              ? 'bg-gradient-to-br from-[#00875a] to-[#006e48] text-white border-emerald-400/30 rounded-tr-xs shadow-[0_2px_14px_rgba(0,168,121,0.2)]'
+              : 'bg-[#15201b]/95 text-slate-100 border-[#25382e] rounded-tl-xs shadow-[0_2px_14px_rgba(0,0,0,0.3)] backdrop-blur-sm'
+          )}
+        >
+          {/* Reply Context */}
+          {replyTo && !isDeletedForEveryone && (
+            <div className="mb-2 p-2 rounded-lg bg-black/30 border-l-2 border-[#00F0FF] text-xs">
+              <span className="font-semibold text-emerald-300 block leading-tight">
+                {replyTo.senderName}
+              </span>
+              <span className="text-slate-300 truncate block mt-0.5">
+                {replyTo.content}
+              </span>
+            </div>
+          )}
+
+          {/* Encrypted Media Attachments */}
+          {attachment && !isDeletedForEveryone && (
+            <div className="mb-2 rounded-xl overflow-hidden bg-black/25 border border-emerald-500/20">
+              {isImage ? (
+                attachment.url ? (
+                  <div className="relative group/img">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={attachment.url}
+                      alt={attachment.fileName}
+                      className="w-full max-h-72 object-cover rounded-lg cursor-pointer transition-transform duration-200 group-hover/img:scale-[1.01]"
+                      loading="lazy"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsLightboxOpen(true);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsLightboxOpen(true);
+                      }}
+                      className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-white opacity-0 group-hover/img:opacity-100 transition-opacity hover:bg-black/80"
+                      title="Enlarge Photo"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    onClick={handleDownloadClick}
+                    className="p-6 flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-black/40 transition-colors"
+                  >
+                    <div className="h-10 w-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center animate-pulse">
+                      <ImageIcon className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-200">
+                      Tap to Decrypt & View Photo
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {formatFileSize(attachment.fileSizeBytes) || 'Encrypted Image'}
+                    </span>
+                  </div>
+                )
+              ) : isVideo ? (
+                attachment.url ? (
+                  <video
+                    src={attachment.url}
+                    controls
+                    className="w-full max-h-72 rounded-lg bg-black"
+                  />
+                ) : (
+                  <div
+                    onClick={handleDownloadClick}
+                    className="p-6 flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-black/40 transition-colors"
+                  >
+                    <div className="h-10 w-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center animate-pulse">
+                      <Download className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-200">
+                      Tap to Decrypt & Stream Video
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {formatFileSize(attachment.fileSizeBytes) || 'Encrypted Video'}
+                    </span>
+                  </div>
+                )
+              ) : isAudio ? (
+                <AudioPlayer
+                  url={attachment.url}
+                  fileName={attachment.fileName}
+                  fileSizeBytes={attachment.fileSizeBytes}
+                  onDownload={handleDownloadClick}
+                />
+              ) : (
+                /* Document File Card */
+                <div
+                  onClick={handleDownloadClick}
+                  className="p-3 flex items-center justify-between gap-3 hover:bg-black/40 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <div className="h-10 w-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                      {getDocumentIcon(attachment.fileName, attachment.mimeType)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <span className="text-xs font-semibold text-slate-100 block truncate leading-tight">
+                        {attachment.fileName}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block font-mono mt-0.5">
+                        {formatFileSize(attachment.fileSizeBytes) || 'Encrypted Document'}
+                      </span>
+                    </div>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => {
-                      setShowMenu(false);
-                      onDelete(id, false);
-                    }}
-                    className="px-3 py-2 text-left hover:bg-gcs-sidebar text-gcs-text flex items-center gap-2 transition-colors"
+                    onClick={handleDownloadClick}
+                    className="p-2 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500 hover:text-slate-950 transition-colors shrink-0"
+                    title="Download File"
                   >
-                    <Trash2 className="w-3.5 h-3.5 text-gcs-muted" />
-                    <span>Delete for me</span>
+                    <Download className="w-4 h-4" />
                   </button>
                 </div>
               )}
             </div>
           )}
+
+          {/* Text Message Content */}
+          {content && (
+            <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-relaxed select-text text-[13.5px]">
+              {isDeletedForEveryone ? (
+                <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                  <Ban className="w-3.5 h-3.5 text-slate-400 inline shrink-0" />
+                  <span>This message was deleted</span>
+                </span>
+              ) : (
+                content.split(URL_REGEX).map((part, index) => {
+                  if (part.match(URL_REGEX)) {
+                    return (
+                      <a
+                        key={index}
+                        href={part}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#00F0FF] underline hover:text-white transition-colors"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {part}
+                      </a>
+                    );
+                  }
+                  return part;
+                })
+              )}
+            </p>
+          )}
+
+          {/* Rich Link Preview Card */}
+          {firstUrl && !isDeletedForEveryone && (
+            <div className="mt-2 p-2.5 rounded-xl bg-black/30 border border-emerald-500/20 flex flex-col gap-1 text-xs">
+              <div className="flex items-center justify-between text-[11px] text-[#00F0FF]">
+                <span className="font-semibold truncate">
+                  {new URL(firstUrl).hostname.replace('www.', '')}
+                </span>
+                <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+              </div>
+              <span className="text-[11px] text-slate-300 truncate font-mono">
+                {firstUrl}
+              </span>
+            </div>
+          )}
+
+          {/* Metadata Footer */}
+          <div className="flex items-center justify-end gap-1.5 mt-1 text-[10px] text-slate-400 select-none">
+            {isEncrypted && (
+              <Lock
+                className="w-2.5 h-2.5 text-emerald-400/80 inline shrink-0"
+                aria-label="AES-256-GCM End-to-End Encrypted"
+              />
+            )}
+            <span>{formatChatTime(timestamp)}</span>
+            {isSentByMe && !isDeletedForEveryone && <span>{statusIcons[status]}</span>}
+          </div>
+
+          {/* Reactions */}
+          {!isDeletedForEveryone && reactions.length > 0 && (
+            <div className="absolute -bottom-2.5 right-2 flex items-center gap-1 bg-slate-900 border border-emerald-500/30 px-1.5 py-0.5 rounded-full text-xs shadow-md">
+              {reactions.map((r, i) => (
+                <span
+                  key={i}
+                  className={cn(
+                    'flex items-center gap-0.5 px-1 rounded-full',
+                    r.hasReacted && 'bg-emerald-500/20 text-emerald-300'
+                  )}
+                >
+                  <span>{r.emoji}</span>
+                  {r.count > 1 && <span className="text-[10px]">{r.count}</span>}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Photo Lightbox Modal */}
+      {isLightboxOpen && attachment?.url && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in"
+          onClick={() => setIsLightboxOpen(false)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90dvh] flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top Toolbar */}
+            <div className="w-full flex items-center justify-between pb-3 text-white">
+              <span className="text-sm font-semibold truncate max-w-xs sm:max-w-md">
+                {attachment.fileName}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadClick}
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-emerald-500 hover:text-slate-950 transition-colors"
+                  title="Download Photo"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsLightboxOpen(false)}
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-red-500 hover:text-white transition-colors"
+                  title="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Enlarge Photo */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={attachment.url}
+              alt={attachment.fileName}
+              className="max-h-[80dvh] max-w-full rounded-2xl object-contain shadow-2xl border border-emerald-500/20"
+            />
+          </div>
         </div>
       )}
-
-      {/* Message Bubble Container - text strictly fixed within the box */}
-      <div
-        onClick={() => setShowActions((prev) => !prev)}
-        className={cn(
-          'relative max-w-[88%] sm:max-w-[70%] px-3.5 py-2 rounded-2xl shadow-sm text-sm border cursor-pointer active:brightness-105 transition-all overflow-hidden break-words [overflow-wrap:anywhere]',
-          isDeletedForEveryone
-            ? 'bg-[#182229]/80 text-gcs-muted italic border-gcs-border/40'
-            : isSentByMe
-            ? 'bg-[#005c4b] text-[#e9edef] border-[#005c4b] rounded-tr-xs'
-            : 'bg-[#202c33] text-[#e9edef] border-[#202c33] rounded-tl-xs'
-        )}
-      >
-        {/* Reply Preview */}
-        {replyTo && !isDeletedForEveryone && (
-          <div className="mb-1.5 p-2 rounded-lg bg-black/25 border-l-2 border-gcs-emerald text-xs">
-            <span className="font-semibold text-gcs-mint block leading-tight">
-              {replyTo.senderName}
-            </span>
-            <span className="text-gcs-muted truncate block mt-0.5">
-              {replyTo.content}
-            </span>
-          </div>
-        )}
-
-        {/* Encrypted Media Attachment Preview */}
-        {attachment && !isDeletedForEveryone && (
-          <div className="mb-2 rounded-xl overflow-hidden bg-black/20 border border-gcs-border/40">
-            {isImage && attachment.url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={attachment.url}
-                alt={attachment.fileName}
-                className="w-full max-h-64 object-cover rounded-lg"
-                loading="lazy"
-              />
-            ) : isVideo && attachment.url ? (
-              <video
-                src={attachment.url}
-                controls
-                className="w-full max-h-64 rounded-lg bg-black"
-              />
-            ) : (
-              <a
-                href={attachment.url || '#'}
-                download={attachment.fileName}
-                onClick={(e) => {
-                  if (!attachment.url) e.preventDefault();
-                }}
-                className="p-3 flex items-center justify-between gap-3 hover:bg-black/30 transition-colors text-left"
-              >
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <div className="h-9 w-9 rounded-lg bg-gcs-emerald/20 border border-gcs-emerald/30 flex items-center justify-center shrink-0 text-gcs-mint">
-                    <FileText className="w-5 h-5 text-gcs-mint" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="text-xs font-semibold text-gcs-text block truncate leading-tight">
-                      {attachment.fileName}
-                    </span>
-                    <span className="text-[10px] text-gcs-muted block font-mono mt-0.5">
-                      {formatFileSize(attachment.fileSizeBytes) || 'Encrypted File'}
-                    </span>
-                  </div>
-                </div>
-                <div className="p-1.5 rounded-lg bg-gcs-emerald/20 text-gcs-mint shrink-0">
-                  <Download className="w-4 h-4" />
-                </div>
-              </a>
-            )}
-          </div>
-        )}
-
-        {/* Message Content - guaranteed to wrap and never overflow container */}
-        {content && (
-          <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-relaxed select-text text-[13.5px]">
-            {isDeletedForEveryone ? (
-              <span className="flex items-center gap-1.5 text-xs text-gcs-muted/80">
-                <Ban className="w-3.5 h-3.5 text-gcs-muted inline shrink-0" />
-                <span>This message was deleted</span>
-              </span>
-            ) : (
-              content
-            )}
-          </p>
-        )}
-
-        {/* Metadata Footer */}
-        <div className="flex items-center justify-end gap-1.5 mt-1 text-[10.5px] text-gcs-muted select-none">
-          {isEncrypted && (
-            <Lock
-              className="w-2.5 h-2.5 text-gcs-emerald/70 inline shrink-0"
-              aria-label="End-to-End Encrypted"
-            />
-          )}
-          <span>{formatChatTime(timestamp)}</span>
-          {isSentByMe && !isDeletedForEveryone && <span>{statusIcons[status]}</span>}
-        </div>
-
-        {/* Reactions */}
-        {!isDeletedForEveryone && reactions.length > 0 && (
-          <div className="absolute -bottom-2.5 right-2 flex items-center gap-1 bg-gcs-card/90 border border-gcs-border px-1.5 py-0.5 rounded-full text-xs shadow-sm">
-            {reactions.map((r, i) => (
-              <span
-                key={i}
-                className={cn(
-                  'flex items-center gap-0.5 px-1 rounded-full',
-                  r.hasReacted && 'bg-gcs-emerald/20 text-gcs-mint'
-                )}
-              >
-                <span>{r.emoji}</span>
-                {r.count > 1 && <span className="text-[10px]">{r.count}</span>}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+    </>
   );
 };

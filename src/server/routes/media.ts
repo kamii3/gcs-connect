@@ -12,6 +12,7 @@ import path from 'path';
 import crypto from 'crypto';
 import prisma from '@/lib/db';
 import { authenticate } from '@/server/middleware/auth';
+import { io } from '@/server/server';
 
 const router = Router();
 const STORAGE_DIR = path.join(process.cwd(), 'storage', 'encrypted_media');
@@ -85,33 +86,49 @@ router.post('/upload', authenticate, async (req: Request, res: Response) => {
       return;
     }
 
-    // 3. Ensure storage directory exists
-    await fs.mkdir(STORAGE_DIR, { recursive: true });
-
-    // 4. Save ciphertext to disk with randomized filename
+    // 3. Save ciphertext to database (persistent zero-knowledge storage)
     const attachmentId = crypto.randomUUID();
-    const filePath = path.join(STORAGE_DIR, `${attachmentId}.bin`);
-    await fs.writeFile(filePath, cipherBuffer);
-
+    let filePath: string | null = null;
     let thumbPath: string | null = null;
-    if (thumbnailCiphertextBase64) {
-      const thumbBuffer = Buffer.from(thumbnailCiphertextBase64, 'base64');
-      thumbPath = path.join(STORAGE_DIR, `${attachmentId}_thumb.bin`);
-      await fs.writeFile(thumbPath, thumbBuffer);
+
+    // 4. Optionally cache ciphertext on disk
+    try {
+      await fs.mkdir(STORAGE_DIR, { recursive: true });
+      filePath = path.join(STORAGE_DIR, `${attachmentId}.bin`);
+      await fs.writeFile(filePath, cipherBuffer);
+
+      if (thumbnailCiphertextBase64) {
+        const thumbBuffer = Buffer.from(thumbnailCiphertextBase64, 'base64');
+        thumbPath = path.join(STORAGE_DIR, `${attachmentId}_thumb.bin`);
+        await fs.writeFile(thumbPath, thumbBuffer);
+      }
+    } catch (diskErr) {
+      console.warn('[DiskCacheWarning] Continuing with database ciphertext storage:', diskErr);
     }
 
-    // 5. Create Attachment database record
+    // 5. Create Attachment database record with embedded ciphertext
     const attachment = await prisma.attachment.create({
       data: {
         id: attachmentId,
         messageId,
-        storagePath: filePath,
+        storagePath: filePath || `db://${attachmentId}`,
+        ciphertextBase64,
         encryptedMimeType,
         fileSizeBytes: BigInt(cipherBuffer.length),
         ciphertextSha256: computedSha,
         thumbnailStoragePath: thumbPath,
       },
     });
+
+    // 6. Notify conversation participants that media ciphertext is ready
+    if (io) {
+      io.to(`conversation:${message.conversationId}`).emit('media:ready', {
+        messageId,
+        attachmentId: attachment.id,
+        fileSizeBytes: Number(attachment.fileSizeBytes),
+        ciphertextSha256: attachment.ciphertextSha256,
+      });
+    }
 
     res.status(201).json({
       success: true,
@@ -133,14 +150,20 @@ router.post('/upload', authenticate, async (req: Request, res: Response) => {
 /**
  * GET /api/media/:id
  * Retrieve and stream encrypted media ciphertext (Strictly authorized)
+ * Resolves by either attachment ID or parent message ID
  */
 router.get('/:id', authenticate, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const callerId = req.user!.id;
 
-    const attachment = await prisma.attachment.findUnique({
-      where: { id },
+    const attachment = await prisma.attachment.findFirst({
+      where: {
+        OR: [
+          { id },
+          { messageId: id },
+        ],
+      },
       include: {
         message: {
           include: {
@@ -171,15 +194,25 @@ router.get('/:id', authenticate, async (req: Request, res: Response) => {
       return;
     }
 
-    // Check if file exists on disk
-    try {
-      await fs.access(attachment.storagePath);
-    } catch {
-      res.status(404).json({ error: 'FILE_MISSING', message: 'Encrypted storage file is missing on host.' });
-      return;
+    let fileBuffer: Buffer | null = null;
+
+    // Priority 1: Serve directly from persistent database ciphertext
+    if (attachment.ciphertextBase64) {
+      fileBuffer = Buffer.from(attachment.ciphertextBase64, 'base64');
+    } else if (attachment.storagePath) {
+      // Priority 2: Fall back to disk storage if available
+      try {
+        fileBuffer = await fs.readFile(attachment.storagePath);
+      } catch {
+        res.status(404).json({ error: 'FILE_MISSING', message: 'Encrypted storage file is missing on host.' });
+        return;
+      }
     }
 
-    const fileBuffer = await fs.readFile(attachment.storagePath);
+    if (!fileBuffer) {
+      res.status(404).json({ error: 'FILE_EMPTY', message: 'Encrypted payload is empty or unavailable.' });
+      return;
+    }
 
     // Stream ciphertext with security headers (never public, never cached on intermediaries)
     res.setHeader('Content-Type', 'application/octet-stream');

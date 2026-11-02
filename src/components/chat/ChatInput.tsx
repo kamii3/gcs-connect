@@ -2,13 +2,26 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
-import { Paperclip, Smile, Mic, Send, Image, FileText, Video, Lock } from 'lucide-react';
+import {
+  Paperclip,
+  Smile,
+  Mic,
+  Send,
+  Image,
+  FileText,
+  Music,
+  Lock,
+  Square,
+  Trash2,
+  Radio,
+  ExternalLink,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface ChatInputProps {
   onSendMessage: (content: string) => void;
   onSendVoiceNote?: () => void;
-  onAttachFile?: (type: 'image' | 'video' | 'document') => void;
+  onAttachFile?: (type: 'image' | 'video' | 'document' | 'audio') => void;
   onSendFile?: (file: File) => void;
   isSending?: boolean;
   disabled?: boolean;
@@ -17,18 +30,25 @@ export interface ChatInputProps {
 
 export const ChatInput: React.FC<ChatInputProps> = ({
   onSendMessage,
-  onSendVoiceNote,
   onAttachFile,
   onSendFile,
   isSending = false,
   disabled = false,
-  placeholder = 'Type an end-to-end encrypted message...',
+  placeholder = 'Type an end-to-end encrypted message or paste link...',
 }) => {
   const [text, setText] = useState('');
   const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleSend = () => {
     if (!text.trim() || isSending || disabled) return;
@@ -60,13 +80,108 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
+  // Start Voice Note Recording via Web Audio API MediaRecorder
+  const startRecording = async () => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      alert('Microphone access is not supported by your browser.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      audioChunksRef.current = [];
+      const recorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : MediaRecorder.isTypeSupported('audio/ogg')
+          ? 'audio/ogg'
+          : '',
+      });
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        if (audioChunksRef.current.length > 0) {
+          const mime = recorder.mimeType || 'audio/webm';
+          const ext = mime.includes('ogg') ? 'ogg' : 'webm';
+          const audioBlob = new Blob(audioChunksRef.current, { type: mime });
+          const audioFile = new File([audioBlob], `Voice-Note-${Date.now()}.${ext}`, {
+            type: mime,
+          });
+          onSendFile?.(audioFile);
+        }
+      };
+
+      recorder.start(250);
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+      setRecordingSeconds(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1);
+      }, 1000);
+    } catch (err: any) {
+      console.error('Microphone error:', err);
+      alert('Microphone permission required for voice notes. Please grant permission in your browser.');
+    }
+  };
+
+  // Stop Recording and Dispatch Audio File
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+    }
+  };
+
+  // Cancel Recording
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      audioChunksRef.current = [];
+      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+    }
+  };
+
+  const formatRecordingTime = (secs: number) => {
+    const mins = Math.floor(secs / 60);
+    const remaining = secs % 60;
+    return `${mins}:${remaining.toString().padStart(2, '0')}`;
+  };
+
   return (
-    <div className="relative p-2 sm:p-3 bg-gcs-sidebar border-t border-gcs-border flex flex-col gap-1 select-none shrink-0 safe-bottom">
-      {/* Hidden File Pickers */}
+    <div className="relative p-2 sm:p-3 bg-slate-950/80 border-t border-emerald-500/20 flex flex-col gap-1 select-none shrink-0 safe-bottom backdrop-blur-md">
+      {/* Hidden Native File Pickers */}
       <input
         type="file"
         ref={imageInputRef}
         accept="image/*,video/*"
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+      <input
+        type="file"
+        ref={audioInputRef}
+        accept="audio/*,.mp3,.wav,.ogg,.m4a"
         onChange={handleFileSelect}
         className="hidden"
       />
@@ -80,7 +195,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
       {/* Attachment Menu Popup */}
       {showAttachMenu && (
-        <div className="absolute bottom-16 sm:bottom-18 left-2 sm:left-4 z-40 bg-gcs-card border border-gcs-border rounded-xl p-2 shadow-2xl flex flex-col gap-1 animate-slide-up w-48">
+        <div className="absolute bottom-16 sm:bottom-18 left-2 sm:left-4 z-40 bg-slate-900/95 border border-emerald-500/30 rounded-2xl p-2 shadow-2xl flex flex-col gap-1 animate-slide-up w-52 backdrop-blur-xl">
           <button
             type="button"
             onClick={() => {
@@ -88,11 +203,29 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               onAttachFile?.('image');
               imageInputRef.current?.click();
             }}
-            className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium text-gcs-text hover:bg-gcs-emerald/15 hover:text-gcs-mint transition-colors text-left active:scale-98 cursor-pointer"
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-100 hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors text-left active:scale-98 cursor-pointer"
           >
-            <Image className="w-4 h-4 text-gcs-emerald" />
+            <div className="h-7 w-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+              <Image className="w-4 h-4" />
+            </div>
             <span>Photos & Videos</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setShowAttachMenu(false);
+              onAttachFile?.('audio');
+              audioInputRef.current?.click();
+            }}
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-100 hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors text-left active:scale-98 cursor-pointer"
+          >
+            <div className="h-7 w-7 rounded-lg bg-cyan-500/20 text-[#00F0FF] flex items-center justify-center shrink-0">
+              <Music className="w-4 h-4" />
+            </div>
+            <span>Music & Audio Files</span>
+          </button>
+
           <button
             type="button"
             onClick={() => {
@@ -100,87 +233,112 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               onAttachFile?.('document');
               docInputRef.current?.click();
             }}
-            className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-xs font-medium text-gcs-text hover:bg-gcs-emerald/15 hover:text-gcs-mint transition-colors text-left active:scale-98 cursor-pointer"
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-100 hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors text-left active:scale-98 cursor-pointer"
           >
-            <FileText className="w-4 h-4 text-gcs-mint" />
+            <div className="h-7 w-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+              <FileText className="w-4 h-4" />
+            </div>
             <span>Encrypted Document</span>
           </button>
         </div>
       )}
 
-      {/* Main Input Row */}
-      <div className="flex items-end gap-1.5 sm:gap-2 bg-gcs-card border border-gcs-border/80 focus-within:border-gcs-emerald rounded-2xl p-1 sm:p-1.5 transition-colors">
-        {/* Emoji Button */}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 text-gcs-muted hover:text-gcs-text shrink-0 rounded-full"
-          aria-label="Insert Emoji"
-        >
-          <Smile className="w-5 h-5" />
-        </Button>
+      {/* Main Input Row or Active Voice Recording Bar */}
+      {isRecording ? (
+        <div className="flex items-center justify-between gap-3 bg-slate-900 border border-red-500/40 rounded-2xl p-2 animate-pulse">
+          <div className="flex items-center gap-2 text-red-400">
+            <Radio className="w-4 h-4 animate-ping" />
+            <span className="text-xs font-bold font-mono tracking-wider">
+              REC {formatRecordingTime(recordingSeconds)}
+            </span>
+          </div>
 
-        {/* Attachment Trigger */}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => setShowAttachMenu(!showAttachMenu)}
-          className={cn(
-            'h-9 w-9 text-gcs-muted hover:text-gcs-text shrink-0 rounded-full',
-            showAttachMenu && 'text-gcs-mint bg-gcs-emerald/15'
-          )}
-          aria-label="Attach File"
-        >
-          <Paperclip className="w-5 h-5" />
-        </Button>
+          <span className="text-[11px] text-slate-400">Recording encrypted voice note...</span>
 
-        {/* Text Input Area - text-base on mobile prevents iOS safari auto-zoom */}
-        <textarea
-          ref={inputRef}
-          rows={1}
-          value={text}
-          onChange={handleInput}
-          onKeyDown={handleKeyDown}
-          disabled={disabled || isSending}
-          placeholder={placeholder}
-          className="flex-1 bg-transparent text-gcs-text placeholder:text-gcs-muted/60 text-base sm:text-sm focus:outline-none resize-none max-h-32 py-2 px-1.5 leading-relaxed select-text min-h-[38px]"
-        />
-
-        {/* Send or Voice Note Button */}
-        {text.trim().length > 0 ? (
-          <Button
-            type="button"
-            variant="primary"
-            size="icon"
-            onClick={handleSend}
-            isLoading={isSending}
-            disabled={disabled}
-            className="h-9 w-9 shrink-0 rounded-full bg-gcs-emerald hover:bg-[#00c28c]"
-            aria-label="Send Encrypted Message"
-          >
-            <Send className="w-4 h-4 text-gcs-bg" />
-          </Button>
-        ) : (
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={cancelRecording}
+              className="p-2 rounded-full hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-colors"
+              title="Cancel"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={stopRecording}
+              className="h-8 px-3 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-md active:scale-95 transition-all"
+              title="Send Voice Note"
+            >
+              <Send className="w-3.5 h-3.5 fill-current" />
+              <span>Send</span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-end gap-1.5 sm:gap-2 bg-slate-900/90 border border-emerald-500/30 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-400/30 rounded-2xl p-1 sm:p-1.5 transition-all shadow-inner">
+          {/* Attachment Trigger */}
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            onClick={onSendVoiceNote}
-            disabled={disabled}
-            className="h-9 w-9 text-gcs-muted hover:text-gcs-mint hover:bg-gcs-emerald/15 shrink-0 rounded-full"
-            aria-label="Record Voice Message"
+            onClick={() => setShowAttachMenu(!showAttachMenu)}
+            className={cn(
+              'h-9 w-9 text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10 shrink-0 rounded-full transition-all',
+              showAttachMenu && 'text-emerald-300 bg-emerald-500/20 rotate-45'
+            )}
+            aria-label="Attach File"
           >
-            <Mic className="w-5 h-5" />
+            <Paperclip className="w-4 h-4" />
           </Button>
-        )}
-      </div>
+
+          {/* Text Input Area */}
+          <textarea
+            ref={inputRef}
+            rows={1}
+            value={text}
+            onChange={handleInput}
+            onKeyDown={handleKeyDown}
+            disabled={disabled || isSending}
+            placeholder={placeholder}
+            className="flex-1 bg-transparent text-slate-100 placeholder:text-slate-500 text-base sm:text-sm focus:outline-none resize-none max-h-32 py-2 px-1.5 leading-relaxed select-text min-h-[38px]"
+          />
+
+          {/* Send or Voice Note Button */}
+          {text.trim().length > 0 ? (
+            <Button
+              type="button"
+              variant="primary"
+              size="icon"
+              onClick={handleSend}
+              isLoading={isSending}
+              disabled={disabled}
+              className="h-9 w-9 shrink-0 rounded-full bg-emerald-500 hover:bg-emerald-400 shadow-[0_0_12px_rgba(0,168,121,0.4)] transition-all active:scale-95"
+              aria-label="Send Encrypted Message"
+            >
+              <Send className="w-4 h-4 text-slate-950 fill-current" />
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={startRecording}
+              disabled={disabled}
+              className="h-9 w-9 text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/15 shrink-0 rounded-full transition-all active:scale-90"
+              aria-label="Record Voice Note"
+              title="Record Voice Note"
+            >
+              <Mic className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Security Footer Banner */}
-      <div className="flex items-center justify-center gap-1.5 text-[10px] sm:text-[11px] text-gcs-muted/70 pt-0.5 truncate">
-        <Lock className="w-3 h-3 text-gcs-emerald/70 shrink-0" />
-        <span className="truncate">End-to-End Encrypted via GCS Double Ratchet</span>
+      <div className="flex items-center justify-center gap-1.5 text-[10px] sm:text-[11px] text-slate-500 pt-0.5 truncate">
+        <Lock className="w-3 h-3 text-emerald-400/70 shrink-0" />
+        <span className="truncate">GCS Cyber-Shield • AES-256-GCM Zero-Plaintext Security</span>
       </div>
     </div>
   );
