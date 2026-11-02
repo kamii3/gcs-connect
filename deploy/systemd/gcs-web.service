@@ -1,0 +1,35 @@
+[Unit]
+Description=GCS CONNECT Next.js 14 Frontend Application
+After=network.target gcs-api.service
+Wants=gcs-api.service
+
+[Service]
+Type=simple
+User=gcs
+Group=gcs
+WorkingDirectory=/var/www/gcs-connect
+Environment=NODE_ENV=production
+Environment=PORT=3000
+EnvironmentFile=/var/www/gcs-connect/.env
+
+# Next.js Production Execution
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5s
+
+# Sandboxing and Process Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gcs-web
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,35 @@
+[Unit]
+Description=GCS CONNECT Real-Time API & WebRTC Signaling Server
+After=network.target mariadb.service mysql.service
+Wants=mariadb.service
+
+[Service]
+Type=simple
+User=gcs
+Group=gcs
+WorkingDirectory=/var/www/gcs-connect
+Environment=NODE_ENV=production
+Environment=PORT=3001
+EnvironmentFile=/var/www/gcs-connect/.env
+
+# Node.js Execution
+ExecStart=/usr/bin/node /var/www/gcs-connect/node_modules/tsx/dist/cli.mjs src/server/server.ts
+Restart=always
+RestartSec=5s
+
+# Sandboxing and Process Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gcs-api
+
+[Install]
+WantedBy=multi-user.target

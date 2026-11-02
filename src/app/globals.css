@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary: #121816;
+  --accent-emerald: #00A879;
+  --pale-mint: #B6F1D9;
+  --surface-secondary: #E9EFEC;
+  --card-bg: #1C2420;
+  --sidebar-bg: #151D19;
+  --msg-received: #25372E;
+  --msg-sent: #205B45;
+  --text-main: #F0F5F1;
+  --text-secondary: #A4B5AA;
+  --border-emerald: #31463A;
+  --status-error: #D94D55;
+  --status-warning: #D99B31;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-main);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom GCS WhatsApp-inspired Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #31463A;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #00A879;
+}
+
+/* Glassmorphism Surface Utility */
+.glass-panel {
+  background: rgba(28, 36, 32, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(49, 70, 58, 0.4);
+}
