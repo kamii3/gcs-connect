@@ -14,9 +14,14 @@ import { io } from '@/server/server';
 const router = Router();
 
 // Validation Schemas
-const directConversationSchema = z.object({
-  targetUserId: z.string().uuid('Valid target user ID is required'),
-});
+const directConversationSchema = z
+  .object({
+    targetUserId: z.string().uuid().optional(),
+    targetEmail: z.string().email().optional(),
+  })
+  .refine((data) => data.targetUserId || data.targetEmail, {
+    message: 'Either targetUserId or targetEmail must be provided.',
+  });
 
 const groupConversationSchema = z.object({
   title: z.string().min(1, 'Group title is required').max(100),
@@ -45,7 +50,24 @@ router.post('/direct', authenticate, async (req: Request, res: Response) => {
     }
 
     const callerId = req.user!.id;
-    const { targetUserId } = parsed.data;
+    let targetUserId = parsed.data.targetUserId;
+
+    if (!targetUserId && parsed.data.targetEmail) {
+      const found = await prisma.user.findUnique({
+        where: { email: parsed.data.targetEmail },
+      });
+      if (found) {
+        targetUserId = found.id;
+      }
+    }
+
+    if (!targetUserId) {
+      res.status(404).json({
+        error: 'USER_NOT_FOUND',
+        message: 'The requested recipient does not exist or is inactive.',
+      });
+      return;
+    }
 
     if (callerId === targetUserId) {
       res.status(400).json({

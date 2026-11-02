@@ -55,13 +55,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentUserEmail,
 }) => {
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'unread' | 'direct'>('all');
+  const [filter, setFilter] = useState<'all' | 'unread' | 'direct' | 'groups'>('all');
+
+  const unreadTotal = conversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
 
   const filtered = conversations.filter((c) => {
     const matchesSearch = c.name.toLowerCase().includes(search.toLowerCase());
     if (!matchesSearch) return false;
     if (filter === 'unread') return (c.unreadCount || 0) > 0;
     if (filter === 'direct') return !c.isGroup;
+    if (filter === 'groups') return Boolean(c.isGroup);
     return true;
   });
 
@@ -93,6 +96,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={onNewChat}
             className="h-8 w-8 text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card"
             aria-label="Start New Chat"
+            title="Start New Chat"
           >
             <MessageSquarePlus className="w-4 h-4" />
           </Button>
@@ -102,6 +106,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={onOpenSettings}
             className="h-8 w-8 text-gcs-muted hover:text-gcs-text hover:bg-gcs-card"
             aria-label="Settings"
+            title="Settings"
           >
             <Settings className="w-4 h-4" />
           </Button>
@@ -118,30 +123,56 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className="h-8.5 bg-gcs-card/80 text-xs rounded-xl"
         />
 
-        <div className="flex items-center gap-1.5 pt-0.5">
-          {(['all', 'unread', 'direct'] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setFilter(tab)}
-              className={cn(
-                'text-xs px-2.5 py-1 rounded-full font-medium capitalize transition-colors',
-                filter === tab
-                  ? 'bg-gcs-emerald/20 text-gcs-mint border border-gcs-emerald/40'
-                  : 'text-gcs-muted hover:text-gcs-text hover:bg-gcs-card'
-              )}
-            >
-              {tab}
-            </button>
-          ))}
+        <div className="flex items-center gap-1.5 pt-0.5 overflow-x-auto pb-0.5">
+          {(['all', 'unread', 'direct', 'groups'] as const).map((tab) => {
+            const count = tab === 'unread' ? unreadTotal : undefined;
+            return (
+              <button
+                key={tab}
+                onClick={() => setFilter(tab)}
+                className={cn(
+                  'text-xs px-2.5 py-1 rounded-full font-medium capitalize transition-colors flex items-center gap-1 shrink-0',
+                  filter === tab
+                    ? 'bg-gcs-emerald/20 text-gcs-mint border border-gcs-emerald/40'
+                    : 'text-gcs-muted hover:text-gcs-text hover:bg-gcs-card'
+                )}
+              >
+                <span>{tab}</span>
+                {count !== undefined && count > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-gcs-emerald text-white font-bold leading-none">
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* Conversation List */}
       <div className="flex-1 overflow-y-auto divide-y divide-gcs-border/20">
         {filtered.length === 0 ? (
-          <div className="p-8 text-center text-xs text-gcs-muted flex flex-col items-center gap-2">
+          <div className="p-8 text-center text-xs text-gcs-muted flex flex-col items-center gap-3 justify-center h-full">
             <Lock className="w-8 h-8 text-gcs-border" />
-            <span>No conversations found</span>
+            <div className="space-y-1">
+              <span className="block font-medium text-gcs-text">No conversations found</span>
+              <span className="block text-[11px] text-gcs-muted">
+                {conversations.length === 0
+                  ? 'Your chat list is empty. Start a new encrypted conversation.'
+                  : 'No chats match the selected filter.'}
+              </span>
+            </div>
+            {conversations.length === 0 && onNewChat && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={onNewChat}
+                className="mt-2 text-xs h-8 px-3 bg-gcs-emerald hover:bg-[#00c28c]"
+              >
+                <MessageSquarePlus className="w-3.5 h-3.5 mr-1.5" />
+                <span>Start New Chat</span>
+              </Button>
+            )}
           </div>
         ) : (
           filtered.map((item) => {

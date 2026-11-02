@@ -542,10 +542,10 @@ router.post('/users/:id/revoke-sessions', async (req: Request, res: Response): P
 });
 
 /**
- * DELETE /api/admin/users/:id/permanent
+ * DELETE /api/admin/users/:id and /api/admin/users/:id/permanent
  * Permanently purge user and all associated keys, devices, and sessions from the database
  */
-router.delete('/users/:id/permanent', async (req: Request, res: Response): Promise<void> => {
+const handlePermanentUserDelete = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
 
@@ -570,11 +570,39 @@ router.delete('/users/:id/permanent', async (req: Request, res: Response): Promi
     const deviceIds = targetUser.devices.map((d) => d.id);
 
     await prisma.$transaction(async (tx) => {
-      // 1. Delete user's sessions
+      // 1. Delete user blocks & notifications & invitations
+      await tx.userBlock.deleteMany({
+        where: { OR: [{ blockerUserId: id }, { blockedUserId: id }] },
+      });
+      await tx.notification.deleteMany({ where: { userId: id } });
+      await tx.invitation.deleteMany({ where: { invitedById: id } });
+
+      // 2. Delete calls initiated by user
+      const calls = await tx.call.findMany({ where: { initiatorUserId: id } });
+      const callIds = calls.map((c) => c.id);
+      if (callIds.length > 0) {
+        await tx.callParticipant.deleteMany({ where: { callId: { in: callIds } } });
+        await tx.call.deleteMany({ where: { id: { in: callIds } } });
+      }
+
+      // 3. Delete user's sessions
       await tx.userSession.deleteMany({ where: { userId: id } });
 
-      // 2. Delete cryptographic keys belonging to user's devices
+      // 4. Delete messages sent by user's devices
       if (deviceIds.length > 0) {
+        const sentMessages = await tx.message.findMany({
+          where: { senderDeviceId: { in: deviceIds } },
+          select: { id: true },
+        });
+        const sentMsgIds = sentMessages.map((m) => m.id);
+        if (sentMsgIds.length > 0) {
+          await tx.attachment.deleteMany({ where: { messageId: { in: sentMsgIds } } });
+          await tx.messageReceipt.deleteMany({ where: { messageId: { in: sentMsgIds } } });
+          await tx.messageReaction.deleteMany({ where: { messageId: { in: sentMsgIds } } });
+          await tx.message.deleteMany({ where: { id: { in: sentMsgIds } } });
+        }
+
+        // Delete cryptographic keys belonging to user's devices
         await tx.oneTimePrekey.deleteMany({ where: { deviceId: { in: deviceIds } } });
         await tx.signedPrekey.deleteMany({ where: { deviceId: { in: deviceIds } } });
         await tx.encryptionIdentityKey.deleteMany({ where: { deviceId: { in: deviceIds } } });
@@ -582,32 +610,32 @@ router.delete('/users/:id/permanent', async (req: Request, res: Response): Promi
         await tx.deviceKeyMetadata.deleteMany({ where: { deviceId: { in: deviceIds } } });
       }
 
-      // 3. Delete devices
+      // 5. Delete devices
       await tx.device.deleteMany({ where: { userId: id } });
 
-      // 4. Delete user roles
+      // 6. Delete user roles
       await tx.userRole.deleteMany({ where: { userId: id } });
 
-      // 5. Delete conversation memberships
+      // 7. Delete conversation memberships
       await tx.conversationMember.deleteMany({ where: { userId: id } });
 
-      // 6. Delete message receipts & reactions
+      // 8. Delete message receipts & reactions
       await tx.messageReceipt.deleteMany({ where: { userId: id } });
       await tx.messageReaction.deleteMany({ where: { userId: id } });
 
-      // 7. Delete call participant records
+      // 9. Delete call participant records
       await tx.callParticipant.deleteMany({ where: { userId: id } });
 
-      // 8. Nullify audit log user references if any, then record deletion
+      // 10. Nullify audit log user references if any
       await tx.auditLog.updateMany({
         where: { userId: id },
         data: { userId: null },
       });
 
-      // 9. Permanently remove user
+      // 11. Permanently remove user
       await tx.user.delete({ where: { id } });
 
-      // 10. Record immutable audit log
+      // 12. Record immutable audit log
       await tx.auditLog.create({
         data: {
           userId: req.user!.id,
@@ -632,7 +660,10 @@ router.delete('/users/:id/permanent', async (req: Request, res: Response): Promi
     console.error('Admin permanent delete user error:', err);
     res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: err.message });
   }
-});
+};
+
+router.delete('/users/:id/permanent', handlePermanentUserDelete);
+router.delete('/users/:id', handlePermanentUserDelete);
 
 /**
  * POST /api/admin/change-password

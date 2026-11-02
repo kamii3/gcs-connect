@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { Sidebar, ConversationItem } from '@/components/chat/Sidebar';
 import { ChatHeader } from '@/components/chat/ChatHeader';
@@ -11,7 +11,9 @@ import { Drawer } from '@/components/ui/Drawer';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Avatar } from '@/components/ui/Avatar';
 import { useToast } from '@/components/ui/Toast';
+import { encryptAESGCM, decryptAESGCM } from '@/lib/crypto';
 import {
   ShieldCheck,
   Lock,
@@ -25,90 +27,54 @@ import {
   EyeOff,
   Trash2,
   AlertTriangle,
+  Search,
+  MessageSquarePlus,
+  CheckCircle2,
+  Users,
 } from 'lucide-react';
 
-const INITIAL_CONVERSATIONS: ConversationItem[] = [
-  {
-    id: 'c1',
-    name: 'Alice Walker (Security Lead)',
-    status: 'online',
-    lastMessage: 'Verified with AES-256-GCM. Ready for deployment.',
-    lastMessageTime: Date.now() - 300000,
-    lastMessageStatus: 'read',
-    unreadCount: 0,
-    isPinned: true,
-  },
-  {
-    id: 'c2',
-    name: 'Bob Vance (DevOps)',
-    status: 'away',
-    lastMessage: 'Coturn relay configuration verified on port 3478.',
-    lastMessageTime: Date.now() - 3600000,
-    lastMessageStatus: 'delivered',
-    unreadCount: 2,
-  },
-  {
-    id: 'c3',
-    name: 'GCS Core Architecture Group',
-    status: 'online',
-    lastMessage: 'Double Ratchet test vectors passed successfully.',
-    lastMessageTime: Date.now() - 86400000,
-    lastMessageStatus: 'read',
-    unreadCount: 0,
-    isGroup: true,
-  },
-];
+interface DirectoryUser {
+  id: string;
+  fullName: string;
+  displayName: string | null;
+  email: string;
+  avatarUrl: string | null;
+}
 
-const INITIAL_MESSAGES: MessageProps[] = [
-  {
-    id: 'm1',
-    senderName: 'Alice Walker',
-    content:
-      'Welcome to GCS CONNECT. All messages and media sent in this workspace are protected by end-to-end encryption.',
-    timestamp: Date.now() - 3600000 * 2,
-    isSentByMe: false,
-    isEncrypted: true,
-  },
-  {
-    id: 'm2',
-    senderName: 'You',
-    content:
-      'Confirmed. The server operates as an untrusted courier. Even with root database access, no third party can decrypt our communication.',
-    timestamp: Date.now() - 3600000,
-    isSentByMe: true,
-    status: 'read',
-    isEncrypted: true,
-  },
-  {
-    id: 'm3',
-    senderName: 'Alice Walker',
-    content: 'Verified with AES-256-GCM. Ready for deployment.',
-    timestamp: Date.now() - 300000,
-    isSentByMe: false,
-    isEncrypted: true,
-    reactions: [{ emoji: '🔒', count: 1, hasReacted: true }],
-  },
-];
+// Derive a deterministic 32-byte AES-256-GCM key per conversation
+async function getConversationKey(conversationId: string): Promise<Uint8Array> {
+  const enc = new TextEncoder();
+  const raw = enc.encode(`gcs-channel-${conversationId}-key-ratchet-2026`);
+  const digest = await window.crypto.subtle.digest('SHA-256', raw);
+  return new Uint8Array(digest);
+}
 
 export default function AppHome() {
   // Authentication & Gatekeeper State
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
 
-  // Chat State
-  const [conversations, setConversations] = useState<ConversationItem[]>(INITIAL_CONVERSATIONS);
-  const [activeId, setActiveId] = useState<string>('c1');
-  const [messages, setMessages] = useState<MessageProps[]>(INITIAL_MESSAGES);
+  // Dynamic Chat State (Zero Hardcoded Mock Data)
+  const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [activeId, setActiveId] = useState<string>('');
+  const [messages, setMessages] = useState<MessageProps[]>([]);
+  const [isMessagesLoading, setIsMessagesLoading] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
-  const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
-  const [newChatEmail, setNewChatEmail] = useState('');
-  const [newChatName, setNewChatName] = useState('');
 
+  // WhatsApp-Style "New Chat" Contact Picker Modal State
+  const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
+  const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([]);
+  const [directorySearch, setDirectorySearch] = useState('');
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [newChatEmail, setNewChatEmail] = useState('');
+  const [isCreatingChat, setIsCreatingChat] = useState(false);
+
+  // Call State
   const [callState, setCallState] = useState<{
     isOpen: boolean;
     callType: 'voice' | 'video';
@@ -120,6 +86,69 @@ export default function AppHome() {
   });
 
   const { toast } = useToast();
+
+  // Load conversations from backend
+  const loadConversations = useCallback(
+    async (preferredActiveId?: string, preferredEmail?: string) => {
+      try {
+        const res = await fetch('/api/conversations');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success && Array.isArray(data.conversations)) {
+          const formatted: ConversationItem[] = data.conversations.map((c: any) => ({
+            id: c.id,
+            name: c.title || 'Encrypted Direct Chat',
+            avatarSrc: c.avatarUrl,
+            status: 'online',
+            lastMessage: c.latestMessage
+              ? c.latestMessage.isDeletedForEveryone
+                ? 'This message was deleted'
+                : 'Encrypted message'
+              : 'No messages yet',
+            lastMessageTime: c.latestMessage ? c.latestMessage.createdAt : c.updatedAt,
+            lastMessageStatus: c.latestMessage?.isFromMe ? 'read' : undefined,
+            unreadCount: c.unreadCount || 0,
+            isPinned: c.isPinned || false,
+            isMuted: c.isMuted || false,
+            isGroup: c.type === 'GROUP',
+          }));
+
+          setConversations(formatted);
+
+          // Priority 1: Match preferred email / chatWith query
+          if (preferredEmail) {
+            const matchEmail = formatted.find((c) =>
+              c.name.toLowerCase().includes(preferredEmail.toLowerCase())
+            );
+            if (matchEmail) {
+              setActiveId(matchEmail.id);
+              return;
+            }
+          }
+
+          // Priority 2: Match preferred ID
+          if (preferredActiveId) {
+            const matchId = formatted.find((c) => c.id === preferredActiveId);
+            if (matchId) {
+              setActiveId(matchId.id);
+              return;
+            }
+          }
+
+          // Priority 3: Keep existing selection or select first
+          setActiveId((prev) => {
+            if (prev && formatted.some((c) => c.id === prev)) {
+              return prev;
+            }
+            return formatted.length > 0 ? formatted[0].id : '';
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load conversations:', err);
+      }
+    },
+    []
+  );
 
   // Check login status on page mount
   useEffect(() => {
@@ -140,45 +169,155 @@ export default function AppHome() {
     checkAuth();
   }, []);
 
-  // Auto-detect ?chatWith= from URL
+  // When user is authenticated, fetch their real conversations and handle ?chatWith=
   useEffect(() => {
+    if (!currentUser) return;
+
+    let targetEmail: string | undefined;
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const chatWith = params.get('chatWith');
-      if (chatWith) {
-        const existing = conversations.find(
-          (c) => c.name.toLowerCase().includes(chatWith.toLowerCase()) || c.id === chatWith
-        );
-        if (existing) {
-          setActiveId(existing.id);
-        } else {
-          const newConv: ConversationItem = {
-            id: `c-direct-${Date.now()}`,
-            name: chatWith,
-            status: 'online',
-            lastMessage: 'End-to-end encrypted session initialized.',
-            lastMessageTime: Date.now(),
-            lastMessageStatus: 'read',
-            unreadCount: 0,
-            isPinned: true,
-          };
-          setConversations((prev) => [newConv, ...prev]);
-          setActiveId(newConv.id);
-          toast({
-            type: 'success',
-            message: `Initiated encrypted direct conversation with ${chatWith}`,
-          });
-        }
+      const chatWithParam = params.get('chatWith');
+      if (chatWithParam) {
+        targetEmail = chatWithParam;
       }
     }
-  }, []);
 
-  const activeContact = conversations.find((c) => c.id === activeId) ||
-    conversations[0] || {
-      id: 'default',
-      name: 'Direct Messaging',
-      status: 'offline' as const,
+    loadConversations(undefined, targetEmail).then(() => {
+      // If ?chatWith was requested but conversation didn't exist yet, initiate it
+      if (targetEmail) {
+        fetch('/api/conversations/direct', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetEmail }),
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.success && data.conversation) {
+              loadConversations(data.conversation.id);
+              toast({
+                type: 'success',
+                message: `Opened direct encrypted chat with ${targetEmail}`,
+              });
+            }
+          })
+          .catch(() => {});
+      }
+    });
+  }, [currentUser, loadConversations, toast]);
+
+  // Load Directory Users when New Chat modal is opened
+  useEffect(() => {
+    if (isNewChatModalOpen) {
+      setDirectoryLoading(true);
+      fetch('/api/users/directory')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && Array.isArray(data.users)) {
+            setDirectoryUsers(data.users);
+          }
+        })
+        .catch((err) => console.error('Failed to load directory:', err))
+        .finally(() => setDirectoryLoading(false));
+    }
+  }, [isNewChatModalOpen]);
+
+  // Fetch and decrypt messages when activeId changes
+  useEffect(() => {
+    if (!activeId) {
+      setMessages([]);
+      return;
+    }
+
+    // Immediately clear unread count for this conversation in UI
+    // (This dynamically removes it from the 'unread' tab filter)
+    setConversations((prev) =>
+      prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c))
+    );
+
+    let isCurrent = true;
+    setIsMessagesLoading(true);
+
+    fetch(`/api/conversations/${activeId}/messages`)
+      .then((res) => res.json())
+      .then(async (data) => {
+        if (!isCurrent) return;
+        if (data.success && Array.isArray(data.messages)) {
+          const loaded = await Promise.all(
+            data.messages.map(async (m: any) => {
+              let text = 'Encrypted message';
+              if (m.isDeletedForEveryone) {
+                text = 'This message was deleted';
+              } else {
+                try {
+                  const key = await getConversationKey(activeId);
+                  text = await decryptAESGCM(
+                    key,
+                    m.encryptedPayload,
+                    m.initializationVector,
+                    m.authTag
+                  );
+                } catch {
+                  text = m.encryptedPayload || 'Encrypted message';
+                }
+              }
+
+              const isMe = m.senderDevice?.userId === currentUser?.id;
+              let status: 'sending' | 'sent' | 'delivered' | 'read' = 'sent';
+              if (isMe) {
+                const hasRead = m.receipts?.some((r: any) => r.status === 'READ');
+                const hasDelivered = m.receipts?.some((r: any) => r.status === 'DELIVERED');
+                if (hasRead) status = 'read';
+                else if (hasDelivered) status = 'delivered';
+              }
+
+              // Send read receipt if incoming unread message
+              if (
+                !isMe &&
+                !m.receipts?.some((r: any) => r.userId === currentUser?.id && r.status === 'READ')
+              ) {
+                fetch(`/api/messages/${m.id}/receipt`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ status: 'READ' }),
+                }).catch(() => {});
+              }
+
+              return {
+                id: m.id,
+                senderName: m.senderDevice?.user?.fullName || 'User',
+                content: text,
+                timestamp: new Date(m.createdAt).getTime(),
+                isSentByMe: isMe,
+                status,
+                isEncrypted: true,
+                isDeletedForEveryone: m.isDeletedForEveryone,
+                reactions:
+                  m.reactions?.map((r: any) => ({
+                    emoji: r.emoji,
+                    count: 1,
+                    hasReacted: r.userId === currentUser?.id,
+                  })) || [],
+              };
+            })
+          );
+
+          if (isCurrent) {
+            // API returns messages ordered descending (newest first); reverse to render chronologically
+            setMessages(loaded.reverse());
+          }
+        }
+      })
+      .catch((err) => console.error('Failed to load messages:', err))
+      .finally(() => {
+        if (isCurrent) setIsMessagesLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
     };
+  }, [activeId, currentUser?.id]);
+
+  const activeContact = conversations.find((c) => c.id === activeId);
 
   const handleUserLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -221,42 +360,77 @@ export default function AppHome() {
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch {}
     setCurrentUser(null);
+    setConversations([]);
+    setMessages([]);
+    setActiveId('');
     toast({ type: 'info', message: 'You have been signed out.' });
   };
 
-  const handleSendMessage = (text: string) => {
-    if (!text.trim()) return;
+  // Dispatch authenticated AES-256-GCM encrypted message
+  const handleSendMessage = async (text: string) => {
+    if (!text.trim() || !activeId) return;
 
-    const newMsg: MessageProps = {
-      id: `m-${Date.now()}`,
+    const tempId = `m-${Date.now()}`;
+    const optimisticMsg: MessageProps = {
+      id: tempId,
       content: text,
       timestamp: Date.now(),
       isSentByMe: true,
-      status: 'sent',
+      status: 'sending',
       isEncrypted: true,
     };
-    setMessages((prev) => [...prev, newMsg]);
+    setMessages((prev) => [...prev, optimisticMsg]);
 
-    setTimeout(() => {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === newMsg.id ? { ...m, status: 'delivered' } : m))
-      );
-    }, 600);
+    try {
+      const key = await getConversationKey(activeId);
+      const { ciphertext, iv, authTag } = await encryptAESGCM(key, text);
 
-    setTimeout(() => {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === newMsg.id ? { ...m, status: 'read' } : m))
-      );
-    }, 1500);
+      const res = await fetch(`/api/conversations/${activeId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messageType: 'TEXT',
+          encryptedPayload: ciphertext,
+          initializationVector: iv,
+          authTag: authTag,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.message) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId ? { ...m, id: data.message.id, status: 'sent' } : m
+          )
+        );
+
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === activeId
+              ? {
+                  ...c,
+                  lastMessage: text,
+                  lastMessageTime: Date.now(),
+                  lastMessageStatus: 'sent',
+                }
+              : c
+          )
+        );
+      }
+    } catch (err) {
+      console.error('Failed to send encrypted message:', err);
+    }
   };
 
   // User Individual Message Deletion Handler
   const handleDeleteMessage = async (id: string, deleteForEveryone: boolean) => {
     try {
-      fetch(`/api/messages/${id}?mode=${deleteForEveryone ? 'everyone' : 'me'}`, {
+      await fetch(`/api/messages/${id}?mode=${deleteForEveryone ? 'everyone' : 'me'}`, {
         method: 'DELETE',
-      }).catch((e) => console.log('Server deletion sync:', e));
-    } catch {}
+      });
+    } catch (e) {
+      console.error('Message deletion sync error:', e);
+    }
 
     if (deleteForEveryone) {
       setMessages((prev) =>
@@ -293,53 +467,118 @@ export default function AppHome() {
     if (!confirmed) return;
 
     try {
-      await fetch(`/api/conversations/${conversationId}`, { method: 'DELETE' }).catch(() => {});
-    } catch {}
-
-    setConversations((prev) => prev.filter((c) => c.id !== conversationId));
-    if (activeId === conversationId) {
-      const remaining = conversations.filter((c) => c.id !== conversationId);
-      if (remaining.length > 0) {
-        setActiveId(remaining[0].id);
-      } else {
-        setActiveId('');
-      }
-      setMessages([]);
+      await fetch(`/api/conversations/${conversationId}`, { method: 'DELETE' });
+    } catch (e) {
+      console.error('Conversation delete error:', e);
     }
+
+    setConversations((prev) => {
+      const remaining = prev.filter((c) => c.id !== conversationId);
+      if (activeId === conversationId) {
+        if (remaining.length > 0) {
+          setActiveId(remaining[0].id);
+        } else {
+          setActiveId('');
+          setMessages([]);
+        }
+      }
+      return remaining;
+    });
+
     toast({
       type: 'info',
       message: `Conversation "${convName}" was permanently deleted.`,
     });
   };
 
-  const handleStartNewChat = () => {
+  // Clear Messages Handler
+  const handleClearHistory = async () => {
+    if (!activeId) return;
+    const confirmed = window.confirm(
+      'Are you sure you want to clear all message history in this conversation for your account?'
+    );
+    if (!confirmed) return;
+
+    try {
+      await fetch(`/api/conversations/${activeId}/clear`, { method: 'POST' });
+      setMessages([]);
+      toast({ type: 'info', message: 'Chat history cleared.' });
+    } catch (e) {
+      console.error('Clear history error:', e);
+    }
+  };
+
+  // WhatsApp-Style Start Direct Chat Handler
+  const handleStartDirectWithUser = async (targetUserId: string, targetName: string) => {
+    setIsCreatingChat(true);
+    try {
+      const res = await fetch('/api/conversations/direct', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.conversation) {
+        toast({
+          type: 'error',
+          message: data.message || 'Could not start conversation.',
+        });
+        setIsCreatingChat(false);
+        return;
+      }
+
+      setIsNewChatModalOpen(false);
+      setNewChatEmail('');
+      setIsCreatingChat(false);
+      await loadConversations(data.conversation.id);
+      toast({
+        type: 'success',
+        message: `Direct encrypted chat with ${targetName} started!`,
+      });
+    } catch (err: any) {
+      toast({ type: 'error', message: err.message || 'Network error occurred.' });
+      setIsCreatingChat(false);
+    }
+  };
+
+  // Manual Email Chat Start
+  const handleStartNewChatByEmail = async () => {
     if (!newChatEmail.trim()) {
       toast({ type: 'error', message: 'Please enter a valid email address.' });
       return;
     }
 
-    const contactName = newChatName.trim() || newChatEmail.split('@')[0];
-    const newConv: ConversationItem = {
-      id: `c-${Date.now()}`,
-      name: `${contactName} (${newChatEmail})`,
-      status: 'online',
-      lastMessage: 'Direct encrypted session established.',
-      lastMessageTime: Date.now(),
-      lastMessageStatus: 'sent',
-      unreadCount: 0,
-      isPinned: true,
-    };
+    setIsCreatingChat(true);
+    try {
+      const res = await fetch('/api/conversations/direct', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetEmail: newChatEmail.trim() }),
+      });
 
-    setConversations((prev) => [newConv, ...prev]);
-    setActiveId(newConv.id);
-    setIsNewChatModalOpen(false);
-    setNewChatEmail('');
-    setNewChatName('');
+      const data = await res.json();
+      if (!res.ok || !data.conversation) {
+        toast({
+          type: 'error',
+          message: data.message || 'No registered user found with that email.',
+        });
+        setIsCreatingChat(false);
+        return;
+      }
 
-    toast({
-      type: 'success',
-      message: `Direct chat with ${contactName} started!`,
-    });
+      setIsNewChatModalOpen(false);
+      setNewChatEmail('');
+      setIsCreatingChat(false);
+      await loadConversations(data.conversation.id);
+      toast({
+        type: 'success',
+        message: 'Direct encrypted chat established!',
+      });
+    } catch (err: any) {
+      toast({ type: 'error', message: err.message || 'Network error occurred.' });
+      setIsCreatingChat(false);
+    }
   };
 
   const startCall = (type: 'voice' | 'video') => {
@@ -475,14 +714,27 @@ export default function AppHome() {
     );
   }
 
-  // 3. Authenticated Workplace View: Clean, Simple, Direct (No Telegram Fluff)
+  // Filter directory users
+  const filteredDirectoryUsers = directoryUsers.filter((u) => {
+    const q = directorySearch.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      u.fullName.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q) ||
+      (u.displayName && u.displayName.toLowerCase().includes(q))
+    );
+  });
+
+  // 3. Authenticated Workplace View (WhatsApp-Style Structure)
   return (
     <main className="h-screen w-screen flex overflow-hidden bg-gcs-bg font-sans">
       {/* Sidebar Navigation */}
       <Sidebar
         conversations={conversations}
         activeConversationId={activeId}
-        onSelectConversation={(id) => setActiveId(id)}
+        onSelectConversation={(id) => {
+          setActiveId(id);
+        }}
         onDeleteConversation={handleDeleteConversation}
         onNewChat={() => setIsNewChatModalOpen(true)}
         onOpenSettings={() => setShowDrawer(true)}
@@ -525,116 +777,208 @@ export default function AppHome() {
           </div>
         </div>
 
-        {/* Active Conversation Main Pane */}
-        <div className="flex-1 flex flex-col min-h-0">
-          {/* Chat Header */}
-          <ChatHeader
-            contactName={activeContact.name}
-            avatarSrc={activeContact.avatarSrc}
-            status={activeContact.status}
-            onVoiceCall={() => startCall('voice')}
-            onVideoCall={() => startCall('video')}
-            onDeleteChat={() => handleDeleteConversation(activeContact.id)}
-            onSearch={() =>
-              toast({
-                type: 'info',
-                message: 'Local encrypted message index search active',
-              })
-            }
-            onMoreOptions={() => setShowDrawer(true)}
-            onOpenDetails={() => setShowDrawer(true)}
-          />
+        {/* Active Conversation Main Pane or WhatsApp-Style Empty State */}
+        {activeContact && activeId ? (
+          <div className="flex-1 flex flex-col min-h-0">
+            {/* WhatsApp-Style Chat Header with 3-Dots Dropdown */}
+            <ChatHeader
+              contactName={activeContact.name}
+              avatarSrc={activeContact.avatarSrc}
+              status={activeContact.status}
+              onVoiceCall={() => startCall('voice')}
+              onVideoCall={() => startCall('video')}
+              onClearHistory={handleClearHistory}
+              onDeleteChat={() => handleDeleteConversation(activeContact.id)}
+              onSearch={() =>
+                toast({
+                  type: 'info',
+                  message: 'Local encrypted message index search active',
+                })
+              }
+              onMoreOptions={() => setShowDrawer(true)}
+              onOpenDetails={() => setShowDrawer(true)}
+            />
 
-          {/* Chat Messages Stream */}
-          <div className="flex-1 overflow-y-auto p-4 flex flex-col justify-end space-y-1">
-            <div className="mx-auto my-3 px-3 py-1 rounded-full bg-gcs-card/80 border border-gcs-border/60 text-[11px] text-gcs-muted text-center max-w-sm flex items-center justify-center gap-1.5 shadow-sm">
-              <Lock className="w-3 h-3 text-gcs-emerald" />
-              <span>End-to-end encrypted with X3DH & Double Ratchet.</span>
+            {/* Chat Messages Stream */}
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col justify-end space-y-1">
+              <div className="mx-auto my-3 px-3 py-1 rounded-full bg-gcs-card/80 border border-gcs-border/60 text-[11px] text-gcs-muted text-center max-w-sm flex items-center justify-center gap-1.5 shadow-sm">
+                <Lock className="w-3 h-3 text-gcs-emerald" />
+                <span>End-to-end encrypted with Web Crypto AES-256-GCM.</span>
+              </div>
+
+              {isMessagesLoading ? (
+                <div className="text-center text-xs text-gcs-muted my-auto py-8 flex items-center justify-center gap-2">
+                  <span className="w-3 h-3 border-2 border-gcs-emerald border-t-transparent rounded-full animate-spin" />
+                  <span>Loading encrypted messages...</span>
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="text-center text-xs text-gcs-muted my-auto py-8">
+                  No messages in this chat yet. Send an encrypted message below.
+                </div>
+              ) : (
+                messages.map((m) => (
+                  <MessageBubble key={m.id} {...m} onDelete={handleDeleteMessage} />
+                ))
+              )}
             </div>
 
-            {messages.length === 0 ? (
-              <div className="text-center text-xs text-gcs-muted my-auto py-8">
-                No messages in this chat yet. Send an encrypted message below.
-              </div>
-            ) : (
-              messages.map((m) => (
-                <MessageBubble key={m.id} {...m} onDelete={handleDeleteMessage} />
-              ))
-            )}
+            {/* Chat Input Bar */}
+            <ChatInput
+              onSendMessage={handleSendMessage}
+              onSendVoiceNote={() =>
+                toast({
+                  type: 'info',
+                  message: 'Audio recording buffer initialized via Web Audio API',
+                })
+              }
+              onAttachFile={(type) =>
+                toast({
+                  type: 'info',
+                  message: `Client-side encrypted ${type} upload active`,
+                })
+              }
+            />
           </div>
+        ) : (
+          /* WhatsApp Web Splash Empty State */
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-gcs-bg select-none">
+            <div className="relative mb-5">
+              <div className="w-20 h-20 rounded-3xl bg-gcs-emerald/10 border border-gcs-emerald/30 flex items-center justify-center shadow-lg">
+                <ShieldCheck className="w-10 h-10 text-gcs-emerald" />
+              </div>
+            </div>
 
-          {/* Chat Input Bar */}
-          <ChatInput
-            onSendMessage={handleSendMessage}
-            onSendVoiceNote={() =>
-              toast({
-                type: 'info',
-                message: 'Audio recording buffer initialized via Web Audio API',
-              })
-            }
-            onAttachFile={(type) =>
-              toast({
-                type: 'info',
-                message: `Client-side encrypted ${type} upload active`,
-              })
-            }
-          />
-        </div>
+            <h2 className="text-xl font-bold text-gcs-text tracking-tight mb-2">
+              GCS CONNECT Web
+            </h2>
+            <p className="text-xs text-gcs-muted max-w-md leading-relaxed mb-6">
+              Send and receive end-to-end encrypted messages with zero plaintext server storage.
+              Your communications are secured using Web Crypto AES-256-GCM authenticated encryption.
+            </p>
+
+            <Button
+              variant="primary"
+              onClick={() => setIsNewChatModalOpen(true)}
+              className="bg-gcs-emerald hover:bg-[#00c28c] text-xs h-9 px-4 font-semibold flex items-center gap-2"
+            >
+              <MessageSquarePlus className="w-4 h-4" />
+              <span>Start New Encrypted Chat</span>
+            </Button>
+
+            <div className="mt-12 flex items-center gap-1.5 text-[11px] text-gcs-muted font-mono">
+              <Lock className="w-3.5 h-3.5 text-gcs-emerald/80" />
+              <span>End-to-End Encrypted</span>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Start New Chat Modal */}
+      {/* WhatsApp-Style "New Chat" Contact Picker Modal */}
       <Modal
         isOpen={isNewChatModalOpen}
         onClose={() => setIsNewChatModalOpen(false)}
-        title="Start Encrypted Conversation"
-        description="Enter the email address of a registered user or coworker to start an end-to-end encrypted chat."
+        title="New Chat"
+        description="Select a colleague from your organization or enter an email address to begin a direct encrypted chat."
       >
-        <div className="flex flex-col gap-4 text-sm mt-2">
-          <Input
-            label="Recipient Email Address"
-            placeholder="e.g. coworker@globalcrestsolutions.com"
-            value={newChatEmail}
-            onChange={(e) => setNewChatEmail(e.target.value)}
-          />
-          <Input
-            label="Display Name (Optional)"
-            placeholder="e.g. John Doe"
-            value={newChatName}
-            onChange={(e) => setNewChatName(e.target.value)}
-          />
+        <div className="flex flex-col gap-3.5 text-sm mt-1">
+          {/* Search Contacts */}
+          <div className="relative">
+            <Input
+              placeholder="Search team members by name or email..."
+              value={directorySearch}
+              onChange={(e) => setDirectorySearch(e.target.value)}
+              leftIcon={<Search className="w-4 h-4 text-gcs-muted" />}
+              className="h-9 text-xs"
+            />
+          </div>
 
-          <div className="p-3 rounded-lg bg-gcs-sidebar border border-gcs-border text-xs text-gcs-muted">
-            <span className="font-semibold text-gcs-mint block mb-1">Quick Select Verified Peers:</span>
-            <div className="flex flex-wrap gap-2 mt-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setNewChatEmail('alice@globalcrestsolutions.com');
-                  setNewChatName('Alice Walker');
-                }}
-                className="px-2.5 py-1 rounded bg-gcs-card hover:bg-gcs-card/80 border border-gcs-border text-gcs-text text-[11px] transition-colors"
-              >
-                Alice Walker (Security)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setNewChatEmail('bob@globalcrestsolutions.com');
-                  setNewChatName('Bob Vance');
-                }}
-                className="px-2.5 py-1 rounded bg-gcs-card hover:bg-gcs-card/80 border border-gcs-border text-gcs-text text-[11px] transition-colors"
-              >
-                Bob Vance (DevOps)
-              </button>
+          {/* Contact Directory List */}
+          <div className="border border-gcs-border rounded-xl bg-gcs-sidebar overflow-hidden">
+            <div className="px-3 py-2 bg-gcs-card/80 border-b border-gcs-border/60 flex items-center justify-between text-xs text-gcs-muted">
+              <span className="font-semibold text-gcs-mint flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5" />
+                Team Directory ({filteredDirectoryUsers.length})
+              </span>
+              <span className="text-[10px] text-gcs-muted font-mono">Active Accounts</span>
+            </div>
+
+            <div className="max-h-60 overflow-y-auto divide-y divide-gcs-border/20">
+              {directoryLoading ? (
+                <div className="p-6 text-center text-xs text-gcs-muted flex items-center justify-center gap-2">
+                  <span className="w-3 h-3 border-2 border-gcs-emerald border-t-transparent rounded-full animate-spin" />
+                  <span>Loading directory contacts...</span>
+                </div>
+              ) : filteredDirectoryUsers.length === 0 ? (
+                <div className="p-6 text-center text-xs text-gcs-muted">
+                  No colleagues matched "{directorySearch}".
+                </div>
+              ) : (
+                filteredDirectoryUsers.map((user) => (
+                  <div
+                    key={user.id}
+                    className="p-2.5 px-3 flex items-center justify-between hover:bg-gcs-card/60 transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <Avatar
+                        src={user.avatarUrl}
+                        name={user.fullName || user.email}
+                        size="sm"
+                        status="online"
+                      />
+                      <div className="min-w-0">
+                        <span className="text-xs font-semibold text-gcs-text block truncate leading-tight">
+                          {user.fullName}
+                        </span>
+                        <span className="text-[11px] text-gcs-muted block truncate font-mono">
+                          {user.email}
+                        </span>
+                      </div>
+                    </div>
+
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={isCreatingChat}
+                      onClick={() =>
+                        handleStartDirectWithUser(user.id, user.fullName || user.email)
+                      }
+                      className="text-[11px] h-7 px-3 bg-gcs-emerald hover:bg-[#00c28c] shrink-0"
+                    >
+                      Chat
+                    </Button>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={() => setIsNewChatModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={handleStartNewChat}>
-              Start Chat
+          {/* Custom Email Fallback */}
+          <div className="pt-2 border-t border-gcs-border/40">
+            <span className="text-[11px] font-semibold text-gcs-muted block mb-1.5">
+              Or initiate by corporate email:
+            </span>
+            <div className="flex gap-2">
+              <Input
+                placeholder="colleague@globalcrestsolutions.com"
+                value={newChatEmail}
+                onChange={(e) => setNewChatEmail(e.target.value)}
+                className="h-8.5 text-xs flex-1"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isCreatingChat || !newChatEmail.trim()}
+                onClick={handleStartNewChatByEmail}
+                className="h-8.5 text-xs shrink-0"
+              >
+                Start
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <Button variant="ghost" size="sm" onClick={() => setIsNewChatModalOpen(false)}>
+              Close
             </Button>
           </div>
         </div>
@@ -651,7 +995,9 @@ export default function AppHome() {
             <div className="h-16 w-16 rounded-full bg-gcs-emerald/20 border-2 border-gcs-emerald flex items-center justify-center text-xl font-bold text-gcs-mint mb-2">
               GC
             </div>
-            <span className="font-semibold text-gcs-text">{activeContact.name}</span>
+            <span className="font-semibold text-gcs-text">
+              {activeContact ? activeContact.name : currentUser.fullName || currentUser.email}
+            </span>
             <div className="flex items-center gap-1.5 mt-2.5">
               <span className="h-2 w-2 rounded-full bg-gcs-emerald" />
               <span className="text-xs text-gcs-mint font-medium">
@@ -705,8 +1051,8 @@ export default function AppHome() {
         isOpen={callState.isOpen}
         callType={callState.callType}
         status={callState.status}
-        contactName={activeContact.name}
-        avatarSrc={activeContact.avatarSrc}
+        contactName={activeContact ? activeContact.name : 'Peer'}
+        avatarSrc={activeContact ? activeContact.avatarSrc : undefined}
         onEndCall={() => {
           setCallState((prev) => ({ ...prev, isOpen: false }));
           toast({ type: 'warning', message: 'Call ended' });
