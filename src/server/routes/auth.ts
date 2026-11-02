@@ -26,8 +26,8 @@ const LoginSchema = z.object({
 });
 
 const RegisterSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  email: z.string().email('Please enter a valid email address'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
   fullName: z.string().min(1, 'Full name is required').max(100),
   displayName: z.string().optional(),
   invitationToken: z.string().optional(),
@@ -53,8 +53,11 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
     const parseResult = LoginSchema.safeParse(req.body);
     if (!parseResult.success) {
+      const fieldErrors = parseResult.error.flatten().fieldErrors;
+      const firstErr = Object.values(fieldErrors)[0]?.[0] || 'Invalid login details.';
       res.status(400).json({
         error: 'VALIDATION_ERROR',
+        message: firstErr,
         details: parseResult.error.flatten(),
       });
       return;
@@ -200,8 +203,11 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
   try {
     const parseResult = RegisterSchema.safeParse(req.body);
     if (!parseResult.success) {
+      const fieldErrors = parseResult.error.flatten().fieldErrors;
+      const firstErr = Object.values(fieldErrors)[0]?.[0] || 'Invalid registration details.';
       res.status(400).json({
         error: 'VALIDATION_ERROR',
+        message: firstErr,
         details: parseResult.error.flatten(),
       });
       return;

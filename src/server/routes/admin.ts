@@ -12,9 +12,9 @@ router.use(requireRole('SUPER_ADMIN', 'ADMIN'));
 
 // Zod Input Schemas
 const CreateUserSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(12, 'Password must be at least 12 characters'),
-  fullName: z.string().min(1),
+  email: z.string().email('Please enter a valid email address'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  fullName: z.string().min(1, 'Full name is required'),
   displayName: z.string().optional(),
   role: z.enum(['SUPER_ADMIN', 'ADMIN', 'SECURITY_AUDITOR', 'USER']).default('USER'),
 });
@@ -173,8 +173,11 @@ router.post('/users/create', async (req: Request, res: Response): Promise<void> 
   try {
     const parseResult = CreateUserSchema.safeParse(req.body);
     if (!parseResult.success) {
+      const fieldErrors = parseResult.error.flatten().fieldErrors;
+      const firstErr = Object.values(fieldErrors)[0]?.[0] || 'Invalid user data.';
       res.status(400).json({
         error: 'VALIDATION_ERROR',
+        message: firstErr,
         details: parseResult.error.flatten(),
       });
       return;

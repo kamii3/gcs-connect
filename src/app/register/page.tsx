@@ -56,15 +56,23 @@ export default function RegisterPage() {
 
         const data = await res.json();
         if (!res.ok) {
-          setError(data.message || 'Registration failed. Please check your credentials.');
+          const fieldErrors = data.details?.fieldErrors ? (Object.values(data.details.fieldErrors) as string[][]) : [];
+          const errMsg =
+            data.message ||
+            (fieldErrors.length > 0 && fieldErrors[0]?.[0]) ||
+            'Registration failed. Please check your credentials.';
+          setError(errMsg);
           setLoading(false);
           return;
         }
 
         const directChat = `/?chatWith=${encodeURIComponent(data.user.email)}`;
         setChatUrl(directChat);
-        setSuccess(`Account registered successfully! Welcome ${data.user.fullName}.`);
+        setSuccess(`Account registered successfully! Welcome ${data.user.fullName}. Redirecting to encrypted chat...`);
         setLoading(false);
+        setTimeout(() => {
+          router.push(directChat);
+        }, 1200);
       } else {
         // Sign in mode
         const res = await fetch('/api/auth/login', {
@@ -193,7 +201,7 @@ export default function RegisterPage() {
               <Input
                 label="Password"
                 type={showPassword ? 'text' : 'password'}
-                placeholder="Minimum 8 characters"
+                placeholder="Minimum 6 characters"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required

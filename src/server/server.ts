@@ -15,6 +15,8 @@ const PORT = parseInt(process.env.API_PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
+app.set('trust proxy', true);
+
 // 1. Security Middlewares
 app.use(
   helmet({
@@ -24,7 +26,7 @@ app.use(
         scriptSrc: ["'self'", "'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:', 'blob:'],
-        connectSrc: ["'self'", 'ws:', 'wss:', APP_URL],
+        connectSrc: ["'self'", 'ws:', 'wss:', '*'],
       },
     },
     crossOriginEmbedderPolicy: false,
@@ -33,7 +35,11 @@ app.use(
 
 app.use(
   cors({
-    origin: [APP_URL, 'http://localhost:3000'],
+    origin: (origin, callback) => {
+      // allow requests with no origin (like mobile apps, curl, or same-origin proxy rewrites)
+      if (!origin) return callback(null, true);
+      return callback(null, true);
+    },
     credentials: true,
   })
 );

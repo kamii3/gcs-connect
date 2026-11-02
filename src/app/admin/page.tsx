@@ -331,7 +331,12 @@ export default function AdminDashboardPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        setCreateError(data.message || 'Failed to create user account.');
+        const fieldErrors = data.details?.fieldErrors ? (Object.values(data.details.fieldErrors) as string[][]) : [];
+        const errorMsg =
+          data.message ||
+          (fieldErrors.length > 0 && fieldErrors[0]?.[0]) ||
+          'Failed to create user account.';
+        setCreateError(errorMsg);
         return;
       }
 
@@ -1330,11 +1335,11 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-gcs-muted">Temporary Password (Min 12 chars)</label>
+            <label className="text-xs font-semibold text-gcs-muted">Password (Min 6 chars)</label>
             <Input
               type="password"
               required
-              placeholder="••••••••••••"
+              placeholder="Minimum 6 characters"
               value={createPassword}
               onChange={(e) => setCreatePassword(e.target.value)}
             />

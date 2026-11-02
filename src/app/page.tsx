@@ -53,6 +53,8 @@ export default function AppHome() {
   // Authentication & Gatekeeper State
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [registerFullName, setRegisterFullName] = useState('');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
@@ -319,36 +321,74 @@ export default function AppHome() {
 
   const activeContact = conversations.find((c) => c.id === activeId);
 
-  const handleUserLogin = async (e: React.FormEvent) => {
+  const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
     setLoginLoading(true);
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: loginEmail,
-          password: loginPassword,
-          deviceFingerprint: `web-client-${Date.now()}`,
-          deviceName: 'Web Workplace Client',
-        }),
-      });
+      if (authMode === 'login') {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: loginEmail,
+            password: loginPassword,
+            deviceFingerprint: `web-client-${Date.now()}`,
+            deviceName: 'Web Workplace Client',
+          }),
+        });
 
-      const data = await res.json();
-      if (!res.ok) {
-        setLoginError(data.message || 'Authentication failed. Please verify credentials.');
+        const data = await res.json();
+        if (!res.ok) {
+          const fieldErrors = data.details?.fieldErrors ? (Object.values(data.details.fieldErrors) as string[][]) : [];
+          const errMsg =
+            data.message ||
+            (fieldErrors.length > 0 && fieldErrors[0]?.[0]) ||
+            'Authentication failed. Please verify credentials.';
+          setLoginError(errMsg);
+          setLoginLoading(false);
+          return;
+        }
+
+        setCurrentUser(data.user);
         setLoginLoading(false);
-        return;
-      }
+        toast({
+          type: 'success',
+          message: `Welcome back, ${data.user.fullName || data.user.email}!`,
+        });
+      } else {
+        // Direct Account Creation
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fullName: registerFullName,
+            email: loginEmail,
+            password: loginPassword,
+            deviceName: 'Web Workplace Client',
+          }),
+        });
 
-      setCurrentUser(data.user);
-      setLoginLoading(false);
-      toast({
-        type: 'success',
-        message: `Welcome back, ${data.user.fullName || data.user.email}!`,
-      });
+        const data = await res.json();
+        if (!res.ok) {
+          const fieldErrors = data.details?.fieldErrors ? (Object.values(data.details.fieldErrors) as string[][]) : [];
+          const errMsg =
+            data.message ||
+            (fieldErrors.length > 0 && fieldErrors[0]?.[0]) ||
+            'Registration failed. Please check your credentials.';
+          setLoginError(errMsg);
+          setLoginLoading(false);
+          return;
+        }
+
+        setCurrentUser(data.user);
+        setLoginLoading(false);
+        toast({
+          type: 'success',
+          message: `Account created! Welcome, ${data.user.fullName || data.user.email}!`,
+        });
+      }
     } catch (err: any) {
       setLoginError(err.message || 'Network error occurred.');
       setLoginLoading(false);
@@ -616,40 +656,78 @@ export default function AppHome() {
 
         <div className="relative w-full max-w-sm bg-gcs-card border border-gcs-border rounded-2xl shadow-2xl p-6 sm:p-7 animate-fade-in">
           {/* Header */}
-          <div className="flex flex-col items-center text-center mb-6">
+          <div className="flex flex-col items-center text-center mb-5">
             <div className="h-12 w-12 rounded-2xl bg-gcs-emerald/15 border border-gcs-emerald/30 flex items-center justify-center text-gcs-mint mb-3 shadow-inner">
               <ShieldCheck className="w-7 h-7 text-gcs-emerald" />
             </div>
             <h1 className="text-xl font-bold text-gcs-text tracking-tight">GCS CONNECT</h1>
-            <p className="text-xs text-gcs-muted mt-1">Sign in to your encrypted workplace</p>
+            <p className="text-xs text-gcs-muted mt-1">
+              {authMode === 'login'
+                ? 'Sign in to your encrypted workplace'
+                : 'Create your private encrypted account'}
+            </p>
           </div>
 
-          {/* Quick Demo Sign In Pills */}
-          <div className="mb-4 p-2.5 rounded-xl bg-gcs-sidebar border border-gcs-border text-xs flex flex-col gap-1.5">
-            <span className="text-[10.5px] uppercase font-semibold text-gcs-muted tracking-wider">Quick Demo Users:</span>
-            <div className="grid grid-cols-2 gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setLoginEmail('alice@globalcrestsolutions.com');
-                  setLoginPassword('AliceSecurePass2026!');
-                }}
-                className="text-[11px] px-2 py-1 rounded bg-gcs-card hover:bg-gcs-card/80 text-gcs-mint border border-gcs-border font-medium transition-colors text-center"
-              >
-                Alice Walker
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setLoginEmail('bob@globalcrestsolutions.com');
-                  setLoginPassword('BobDevOpsPass2026!');
-                }}
-                className="text-[11px] px-2 py-1 rounded bg-gcs-card hover:bg-gcs-card/80 text-gcs-mint border border-gcs-border font-medium transition-colors text-center"
-              >
-                Bob Vance
-              </button>
-            </div>
+          {/* Mode Switcher Tabs */}
+          <div className="grid grid-cols-2 p-1 bg-gcs-sidebar rounded-xl border border-gcs-border mb-4 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode('login');
+                setLoginError(null);
+              }}
+              className={`py-1.5 rounded-lg transition-colors text-center ${
+                authMode === 'login'
+                  ? 'bg-gcs-emerald text-white shadow-sm'
+                  : 'text-gcs-muted hover:text-gcs-text'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode('register');
+                setLoginError(null);
+              }}
+              className={`py-1.5 rounded-lg transition-colors text-center ${
+                authMode === 'register'
+                  ? 'bg-gcs-emerald text-white shadow-sm'
+                  : 'text-gcs-muted hover:text-gcs-text'
+              }`}
+            >
+              Create Account
+            </button>
           </div>
+
+          {/* Quick Demo Sign In Pills (only shown in Login mode) */}
+          {authMode === 'login' && (
+            <div className="mb-4 p-2.5 rounded-xl bg-gcs-sidebar border border-gcs-border text-xs flex flex-col gap-1.5">
+              <span className="text-[10.5px] uppercase font-semibold text-gcs-muted tracking-wider">Quick Demo Users:</span>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginEmail('alice@globalcrestsolutions.com');
+                    setLoginPassword('AliceSecurePass2026!');
+                  }}
+                  className="text-[11px] px-2 py-1 rounded bg-gcs-card hover:bg-gcs-card/80 text-gcs-mint border border-gcs-border font-medium transition-colors text-center"
+                >
+                  Alice Walker
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginEmail('bob@globalcrestsolutions.com');
+                    setLoginPassword('BobDevOpsPass2026!');
+                  }}
+                  className="text-[11px] px-2 py-1 rounded bg-gcs-card hover:bg-gcs-card/80 text-gcs-mint border border-gcs-border font-medium transition-colors text-center"
+                >
+                  Bob Vance
+                </button>
+              </div>
+            </div>
+          )}
 
           {loginError && (
             <div className="mb-4 p-3 rounded-xl bg-[#D94D55]/15 border border-[#D94D55]/40 text-[#ff8e95] text-xs flex items-center gap-2">
@@ -658,7 +736,20 @@ export default function AppHome() {
             </div>
           )}
 
-          <form onSubmit={handleUserLogin} className="flex flex-col gap-3.5">
+          <form onSubmit={handleAuthSubmit} className="flex flex-col gap-3.5">
+            {authMode === 'register' && (
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-gcs-muted">Full Name</label>
+                <Input
+                  type="text"
+                  required
+                  placeholder="e.g. Alex Morgan"
+                  value={registerFullName}
+                  onChange={(e) => setRegisterFullName(e.target.value)}
+                />
+              </div>
+            )}
+
             <div className="space-y-1">
               <label className="text-xs font-semibold text-gcs-muted">Corporate Email</label>
               <Input
@@ -671,12 +762,12 @@ export default function AppHome() {
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-gcs-muted">Password</label>
+              <label className="text-xs font-semibold text-gcs-muted">Password (Min 6 chars)</label>
               <div className="relative">
                 <Input
                   type={showLoginPassword ? 'text' : 'password'}
                   required
-                  placeholder="Enter your password"
+                  placeholder={authMode === 'register' ? 'Minimum 6 characters' : 'Enter your password'}
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
                   className="pr-10"
@@ -699,14 +790,46 @@ export default function AppHome() {
               disabled={loginLoading}
               className="w-full mt-2 h-10 text-sm font-semibold bg-gcs-emerald hover:bg-[#00c28c]"
             >
-              {loginLoading ? 'Authenticating...' : 'Sign In'}
+              {loginLoading
+                ? 'Processing...'
+                : authMode === 'login'
+                ? 'Sign In'
+                : 'Create Account & Enter Chat'}
             </Button>
           </form>
 
-          <div className="mt-5 pt-3 border-t border-gcs-border/60 text-center text-xs text-gcs-muted">
-            Don't have an account?{' '}
-            <Link href="/register" className="text-gcs-mint font-semibold hover:underline">
-              Register here
+          <div className="mt-5 pt-3 border-t border-gcs-border/60 text-center text-xs text-gcs-muted flex flex-col gap-1.5">
+            {authMode === 'login' ? (
+              <div>
+                Don't have an account?{' '}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('register');
+                    setLoginError(null);
+                  }}
+                  className="text-gcs-mint font-semibold hover:underline"
+                >
+                  Create one now
+                </button>
+              </div>
+            ) : (
+              <div>
+                Already have an account?{' '}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('login');
+                    setLoginError(null);
+                  }}
+                  className="text-gcs-mint font-semibold hover:underline"
+                >
+                  Sign in
+                </button>
+              </div>
+            )}
+            <Link href="/admin" className="text-[11px] text-gcs-emerald hover:underline mt-1">
+              Administrator Console
             </Link>
           </div>
         </div>

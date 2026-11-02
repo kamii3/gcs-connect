@@ -102,10 +102,10 @@ export const generalApiLimiter = createRateLimiter({
 });
 
 /**
- * Strict Auth & Login Rate Limiter: 10 requests / minute per client
+ * Strict Auth & Login Rate Limiter: 100 requests / minute per client
  */
 export const strictAuthLimiter = createRateLimiter({
   windowMs: 60 * 1000,
-  maxRequests: 10,
+  maxRequests: 100,
   message: 'Too many authentication attempts. Account access temporarily throttled.',
 });
