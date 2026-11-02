@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { Sidebar, ConversationItem } from '@/components/chat/Sidebar';
-import { ChatHeader } from '@/components/chat/ChatHeader';
-import { MessageBubble, MessageProps } from '@/components/chat/MessageBubble';
-import { ChatInput } from '@/components/chat/ChatInput';
-import { CallModal } from '@/components/chat/CallModal';
+import { Sidebar, ConversationItem } from '../components/chat/Sidebar';
+import { ChatHeader } from '../components/chat/ChatHeader';
+import { MessageBubble, MessageProps } from '../components/chat/MessageBubble';
+import { ChatInput } from '../components/chat/ChatInput';
+import { CallModal } from '../components/chat/CallModal';
 import { Drawer } from '../components/ui/Drawer';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
