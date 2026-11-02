@@ -93,7 +93,7 @@ const INITIAL_MESSAGES: MessageProps[] = [
 export default function AppHome() {
   // Authentication & Gatekeeper State
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
