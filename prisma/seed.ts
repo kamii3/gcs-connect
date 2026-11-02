@@ -220,7 +220,7 @@ async function main() {
       details: JSON.stringify({
         databaseEngine: 'MySQL 8+ / MariaDB 11',
         e2eeBaseline: 'X3DH + Double Ratchet (AES-256-GCM)',
-        seededUsers: [admin.email, alice.email, bob.email],
+        seededUsers: [admin.email],
       }),
     },
   });

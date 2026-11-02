@@ -7,13 +7,13 @@ import { ChatHeader } from '@/components/chat/ChatHeader';
 import { MessageBubble, MessageProps } from '@/components/chat/MessageBubble';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { CallModal } from '@/components/chat/CallModal';
-import { Drawer } from '@/components/ui/Drawer';
-import { Modal } from '@/components/ui/Modal';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Avatar } from '@/components/ui/Avatar';
-import { useToast } from '@/components/ui/Toast';
-import { encryptAESGCM, decryptAESGCM } from '@/lib/crypto';
+import { Drawer } from '../components/ui/Drawer';
+import { Modal } from '../components/ui/Modal';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { Avatar } from '../components/ui/Avatar';
+import { useToast } from '../components/ui/Toast';
+import { encryptAESGCM, decryptAESGCM } from '../lib/crypto';
 import {
   ShieldCheck,
   Lock,
