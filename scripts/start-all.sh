@@ -100,5 +100,5 @@ echo -e "  • Backend API Health : ${COLOR_MINT}http://localhost:3000/api/healt
 echo ""
 echo -e "${COLOR_YELLOW}  Admin Login Credentials:${COLOR_RESET}"
 echo -e "    Email    : ${COLOR_MINT}admin@globalcrestsolutions.com${COLOR_RESET}"
-echo -e "    Password : ${COLOR_MINT}ChangeMeOnFirstLogin2026!${COLOR_RESET}"
+echo -e "    Password : ${COLOR_MINT}Kamii@336${COLOR_RESET}"
 echo -e "${COLOR_EMERALD}========================================================================${COLOR_RESET}"
