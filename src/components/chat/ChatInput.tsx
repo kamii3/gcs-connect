@@ -38,11 +38,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 }) => {
   const [text, setText] = useState('');
   const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const attachMenuRef = useRef<HTMLDivElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -51,14 +53,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Close attachment menu on outside click or touch
+  const QUICK_EMOJIS = ['👍', '❤️', '😂', '🔥', '🎉', '🙏', '👏', '💯', '🤝', '🚀', '🔐', '☕', '✨', '🤩', '🫡', '👀'];
+
+  // Close menus on outside click or touch
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
       if (attachMenuRef.current && !attachMenuRef.current.contains(event.target as Node)) {
         setShowAttachMenu(false);
       }
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
     };
-    if (showAttachMenu) {
+    if (showAttachMenu || showEmojiPicker) {
       document.addEventListener('mousedown', handleClickOutside);
       document.addEventListener('touchstart', handleClickOutside);
     }
@@ -66,7 +73,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('touchstart', handleClickOutside);
     };
-  }, [showAttachMenu]);
+  }, [showAttachMenu, showEmojiPicker]);
+
+  const handleEmojiClick = (emoji: string) => {
+    setText((prev) => prev + emoji);
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
 
   const handleSend = () => {
     if (!text.trim() || isSending || disabled) return;
@@ -306,11 +320,34 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             </div>
           </div>
         ) : (
-          /* Normal WhatsApp Text Input Pill */
-          <div className="flex-1 bg-[#2a3942] rounded-3xl px-3 py-1.5 flex items-end gap-1.5 shadow-inner">
+          /* Text Input Pill */
+          <div className="flex-1 bg-[#2a3942] rounded-3xl px-3 py-1.5 flex items-end gap-1.5 shadow-inner relative">
+            {/* Quick Emoji Picker Popover */}
+            {showEmojiPicker && (
+              <div
+                ref={emojiPickerRef}
+                className="absolute bottom-full mb-3 left-0 bg-[#233138] border border-gcs-border/60 rounded-2xl p-2.5 shadow-2xl z-50 grid grid-cols-8 gap-2 backdrop-blur-xl animate-fade-in"
+              >
+                {QUICK_EMOJIS.map((em) => (
+                  <button
+                    key={em}
+                    type="button"
+                    onClick={() => handleEmojiClick(em)}
+                    className="w-8 h-8 rounded-xl hover:bg-white/10 flex items-center justify-center text-lg active:scale-125 transition-transform"
+                  >
+                    {em}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <button
               type="button"
-              className="p-1.5 text-[#8696a0] hover:text-white rounded-full transition-colors shrink-0"
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              className={cn(
+                'p-1.5 rounded-full transition-colors shrink-0',
+                showEmojiPicker ? 'text-[#00a884]' : 'text-[#8696a0] hover:text-white'
+              )}
               title="Emoji"
             >
               <Smile className="w-5 h-5" />
@@ -319,7 +356,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             <button
               type="button"
               onClick={() => setShowAttachMenu(!showAttachMenu)}
-              className="p-1.5 text-[#8696a0] hover:text-white rounded-full transition-colors shrink-0"
+              className={cn(
+                'p-1.5 rounded-full transition-colors shrink-0',
+                showAttachMenu ? 'text-[#00a884]' : 'text-[#8696a0] hover:text-white'
+              )}
               title="Attach File"
             >
               <Paperclip className="w-5 h-5 -rotate-45" />

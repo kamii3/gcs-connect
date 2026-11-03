@@ -24,6 +24,8 @@ import {
   MessageSquare,
   LogOut,
   Camera,
+  ArrowLeft,
+  X,
 } from 'lucide-react';
 import { cn, formatChatTime } from '@/lib/utils';
 import { WhatsAppStatusView } from './WhatsAppStatusView';
@@ -111,55 +113,91 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <div className="w-full md:w-80 lg:w-96 h-full bg-gcs-sidebar md:border-r border-gcs-border flex flex-col select-none relative overflow-hidden">
-      {/* WhatsApp Official Top App Bar */}
+      {/* Top App Bar */}
       <div className="px-3 sm:px-4 py-2.5 sm:py-3 bg-[#111b21] border-b border-gcs-border/60 flex items-center justify-between shrink-0 safe-top z-20">
-        <div className="flex items-center gap-2.5">
-          <div className="h-8.5 w-8.5 rounded-xl bg-gcs-emerald/20 border border-gcs-emerald/40 flex items-center justify-center text-gcs-emerald font-bold text-sm shadow-emerald-sm shrink-0">
-            <Shield className="w-4.5 h-4.5 text-gcs-emerald" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-1.5">
-              <span>GCS CONNECT</span>
-              <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 bg-gcs-emerald/20 text-gcs-mint rounded border border-gcs-emerald/30 uppercase">
-                WhatsApp E2EE
-              </span>
-            </h1>
-          </div>
-        </div>
-
-        {/* Header Action Icons */}
-        <div className="flex items-center gap-0.5 relative" ref={topMenuRef}>
-          {/* Quick Search Toggle on Mobile */}
-          <button
-            type="button"
-            onClick={() => setIsSearchOpen(!isSearchOpen)}
-            className="p-2 text-gcs-muted hover:text-white rounded-full hover:bg-gcs-card transition-colors active:scale-90"
-            title="Search"
-          >
-            <Search className="w-4.5 h-4.5" />
-          </button>
-
-          {/* Install App on Device shortcut */}
-          {onOpenInstallModal && (
+        {isSearchOpen ? (
+          <div className="w-full flex items-center gap-2 animate-fade-in">
             <button
               type="button"
-              onClick={onOpenInstallModal}
-              className="p-2 text-gcs-emerald hover:text-gcs-mint rounded-full hover:bg-gcs-card transition-colors active:scale-90"
-              title="Install App on Device"
+              onClick={() => {
+                setIsSearchOpen(false);
+                setSearch('');
+              }}
+              className="p-1.5 text-gcs-muted hover:text-white rounded-full hover:bg-gcs-card transition-colors active:scale-90"
+              title="Close search"
             >
-              <Smartphone className="w-4.5 h-4.5" />
+              <ArrowLeft className="w-5 h-5 text-gcs-emerald" />
             </button>
-          )}
+            <div className="flex-1 relative flex items-center">
+              <input
+                autoFocus
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search chats, contacts, or messages..."
+                className="w-full bg-[#202c33] text-white text-sm rounded-xl pl-3 pr-8 py-1.5 border-none outline-none placeholder:text-[#8696a0]"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-2.5 p-1 text-[#8696a0] hover:text-white rounded-full transition-colors"
+                  title="Clear"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center gap-2.5">
+              <div className="h-8.5 w-8.5 rounded-xl bg-gcs-emerald/20 border border-gcs-emerald/40 flex items-center justify-center text-gcs-emerald font-bold text-sm shadow-emerald-sm shrink-0">
+                <Shield className="w-4.5 h-4.5 text-gcs-emerald" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-1.5">
+                  <span>GCS CONNECT</span>
+                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 bg-gcs-emerald/20 text-gcs-mint rounded border border-gcs-emerald/30 uppercase tracking-wider">
+                    E2EE
+                  </span>
+                </h1>
+              </div>
+            </div>
 
-          {/* 3-Dots Menu Dropdown */}
-          <button
-            type="button"
-            onClick={() => setIsTopMenuOpen(!isTopMenuOpen)}
-            className="p-2 text-gcs-muted hover:text-white rounded-full hover:bg-gcs-card transition-colors active:scale-90"
-            title="Menu"
-          >
-            <MoreVertical className="w-4.5 h-4.5" />
-          </button>
+            {/* Header Action Icons */}
+            <div className="flex items-center gap-0.5 relative" ref={topMenuRef}>
+              {/* Quick Search Toggle on Mobile */}
+              <button
+                type="button"
+                onClick={() => setIsSearchOpen(true)}
+                className="p-2 text-gcs-muted hover:text-white rounded-full hover:bg-gcs-card transition-colors active:scale-90"
+                title="Search"
+              >
+                <Search className="w-4.5 h-4.5" />
+              </button>
+
+              {/* Install App on Device shortcut */}
+              {onOpenInstallModal && (
+                <button
+                  type="button"
+                  onClick={onOpenInstallModal}
+                  className="p-2 text-gcs-emerald hover:text-gcs-mint rounded-full hover:bg-gcs-card transition-colors active:scale-90"
+                  title="Install App on Device"
+                >
+                  <Smartphone className="w-4.5 h-4.5" />
+                </button>
+              )}
+
+              {/* 3-Dots Menu Dropdown */}
+              <button
+                type="button"
+                onClick={() => setIsTopMenuOpen(!isTopMenuOpen)}
+                className="p-2 text-gcs-muted hover:text-white rounded-full hover:bg-gcs-card transition-colors active:scale-90"
+                title="Menu"
+              >
+                <MoreVertical className="w-4.5 h-4.5" />
+              </button>
 
           {isTopMenuOpen && (
             <div className="absolute right-0 top-full mt-1.5 w-52 bg-[#233138] border border-gcs-border rounded-2xl shadow-2xl py-1.5 z-50 text-xs backdrop-blur-xl animate-fade-in divide-y divide-gcs-border/30">
@@ -233,6 +271,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
         </div>
+        </>
+      )}
       </div>
 
       {/* Desktop Navigation Top Tabs (Chats, Status, Calls, Settings) */}
@@ -306,14 +346,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex-1 flex flex-col min-h-0 relative">
           {/* Search & Filter Bar */}
           <div className="p-2 sm:p-2.5 bg-[#111b21] border-b border-gcs-border/40 flex flex-col gap-2 shrink-0">
-            <div className="relative">
-              <Input
+            <div className="relative flex items-center">
+              <Search className="w-4 h-4 text-[#8696a0] absolute left-3 pointer-events-none" />
+              <input
+                type="text"
                 placeholder="Search or start new chat"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                leftIcon={<Search className="w-4 h-4 text-gcs-muted" />}
-                className="h-9 bg-[#202c33] border-none text-base sm:text-xs text-white rounded-xl placeholder:text-gcs-muted"
+                className="w-full h-9 bg-[#202c33] text-sm text-white rounded-xl pl-9 pr-8 py-1.5 border-none outline-none placeholder:text-[#8696a0] placeholder:text-xs focus:ring-1 focus:ring-gcs-emerald transition-all"
               />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-2.5 p-1 text-[#8696a0] hover:text-white rounded-full transition-colors"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
             {/* Filter Pills */}

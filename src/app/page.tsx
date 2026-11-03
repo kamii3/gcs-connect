@@ -109,15 +109,53 @@ export default function AppHome() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [activeCallerName, setActiveCallerName] = useState<string>('Peer');
+  const [incomingNotif, setIncomingNotif] = useState<{
+    id: string;
+    conversationId: string;
+    senderName: string;
+    preview: string;
+    timestamp: number;
+  } | null>(null);
+
+  const prevActiveIdRef = useRef<string | undefined>(activeId);
+  const prevMsgCountRef = useRef<number>(messages.length);
 
   const { toast } = useToast();
 
-  // Auto-scroll to latest message on messages update or conversation change
+  // Auto-dismiss in-app notification banner after 5 seconds
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (!incomingNotif) return;
+    const timer = setTimeout(() => {
+      setIncomingNotif(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [incomingNotif]);
+
+  // Reset document title on window focus
+  useEffect(() => {
+    const handleFocus = () => {
+      document.title = 'GCS CONNECT — High-Assurance End-to-End Encrypted Workplace';
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
+  // Glitch-free smart scrolling: instant snap on conversation switch, smooth on new message
+  useEffect(() => {
+    if (!messagesEndRef.current) return;
+    const isNewChat = prevActiveIdRef.current !== activeId;
+    prevActiveIdRef.current = activeId;
+
+    if (isNewChat) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
+    } else if (messages.length > prevMsgCountRef.current) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg?.isSentByMe || !showScrollBottom) {
+        messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      }
     }
-  }, [messages.length, activeId]);
+    prevMsgCountRef.current = messages.length;
+  }, [messages, activeId, showScrollBottom]);
 
   const handleMessagesScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
@@ -411,47 +449,65 @@ export default function AppHome() {
     const unsubMessage = realtimeSocket.onMessage(async (msg: any) => {
       if (!msg) return;
 
-      if (msg.conversationId === activeId) {
-        let text = 'Encrypted message';
-        let attachmentObj: any = undefined;
+      const isMe = msg.sender?.id === currentUser?.id;
+      const senderName = msg.sender?.fullName || 'User';
 
-        if (msg.isDeletedForEveryone) {
-          text = 'This message was deleted';
-        } else {
-          try {
-            const key = await getConversationKey(msg.conversationId);
-            text = await decryptAESGCM(
-              key,
-              msg.encryptedPayload,
-              msg.initializationVector,
-              msg.authTag
-            );
-          } catch {
-            text = 'Encrypted message';
-          }
+      let text = 'Encrypted message';
+      let attachmentObj: any = undefined;
+      let previewSnippet = 'New message';
 
-          if (text.startsWith('{"type":"MEDIA"') || text.startsWith('{"mediaKey"')) {
-            try {
-              const parsed = JSON.parse(text);
-              attachmentObj = {
-                id: msg.id,
-                fileName: parsed.fileName || 'Encrypted File',
-                fileSizeBytes: parsed.fileSizeBytes,
-                mimeType: parsed.mimeType || 'application/octet-stream',
-                mediaKey: parsed.mediaKey,
-                iv: parsed.iv,
-                authTag: parsed.authTag,
-                ciphertextSha256: parsed.ciphertextSha256,
-              };
-              text = '';
-            } catch {}
-          }
+      if (msg.isDeletedForEveryone) {
+        text = 'This message was deleted';
+        previewSnippet = 'This message was deleted';
+      } else {
+        try {
+          const key = await getConversationKey(msg.conversationId);
+          text = await decryptAESGCM(
+            key,
+            msg.encryptedPayload,
+            msg.initializationVector,
+            msg.authTag
+          );
+        } catch {
+          text = 'Encrypted message';
         }
 
-        const isMe = msg.sender?.id === currentUser.id;
+        if (text.startsWith('{"type":"MEDIA"') || text.startsWith('{"mediaKey"')) {
+          try {
+            const parsed = JSON.parse(text);
+            attachmentObj = {
+              id: msg.id,
+              fileName: parsed.fileName || 'Encrypted File',
+              fileSizeBytes: parsed.fileSizeBytes,
+              mimeType: parsed.mimeType || 'application/octet-stream',
+              mediaKey: parsed.mediaKey,
+              iv: parsed.iv,
+              authTag: parsed.authTag,
+              ciphertextSha256: parsed.ciphertextSha256,
+            };
+            if (attachmentObj.mimeType.startsWith('image/')) {
+              previewSnippet = '📷 Photo';
+            } else if (attachmentObj.mimeType.startsWith('audio/')) {
+              previewSnippet = '🎵 Voice Note';
+            } else if (attachmentObj.mimeType.startsWith('video/')) {
+              previewSnippet = '🎥 Video';
+            } else {
+              previewSnippet = `📄 ${attachmentObj.fileName}`;
+            }
+            text = '';
+          } catch {
+            previewSnippet = '📎 File attachment';
+          }
+        } else {
+          previewSnippet = text;
+        }
+      }
+
+      // 1. Process active conversation message stream
+      if (msg.conversationId === activeId) {
         const newMsg: MessageProps = {
           id: msg.id,
-          senderName: msg.sender?.fullName || 'User',
+          senderName,
           content: text,
           timestamp: new Date(msg.createdAt).getTime(),
           isSentByMe: isMe,
@@ -463,6 +519,14 @@ export default function AppHome() {
 
         setMessages((prev) => {
           if (prev.some((m) => m.id === msg.id)) return prev;
+          if (isMe) {
+            const pendingIdx = prev.findIndex((m) => m.id.startsWith('m-') && m.isSentByMe);
+            if (pendingIdx !== -1) {
+              const next = [...prev];
+              next[pendingIdx] = newMsg;
+              return next;
+            }
+          }
           return [...prev, newMsg];
         });
 
@@ -483,7 +547,6 @@ export default function AppHome() {
 
         // Send READ receipt
         if (!isMe) {
-          playSound('received');
           fetch(`/api/messages/${msg.id}/receipt`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -491,13 +554,65 @@ export default function AppHome() {
           }).catch(() => {});
         }
       } else {
-        if (msg.sender?.id !== currentUser.id) {
-          playSound('received');
+        if (!isMe) {
           fetch(`/api/messages/${msg.id}/receipt`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: 'DELIVERED' }),
           }).catch(() => {});
+        }
+      }
+
+      // 2. Play received audio chime if not sent by me and sound enabled
+      if (!isMe) {
+        const soundEnabled =
+          typeof window !== 'undefined'
+            ? localStorage.getItem('gcs_notif_sounds') !== 'false'
+            : true;
+        if (soundEnabled) {
+          playSound('received');
+        }
+
+        // 3. Browser Push / Desktop Notification
+        if (
+          typeof window !== 'undefined' &&
+          'Notification' in window &&
+          Notification.permission === 'granted'
+        ) {
+          try {
+            const notif = new Notification(senderName, {
+              body: previewSnippet,
+              icon: '/android-chrome-192x192.png',
+              badge: '/android-chrome-192x192.png',
+              tag: msg.conversationId,
+            });
+            notif.onclick = () => {
+              window.focus();
+              setActiveId(msg.conversationId);
+              notif.close();
+            };
+          } catch {}
+        }
+
+        // 4. In-App Floating Notification Banner
+        const isHidden = typeof document !== 'undefined' && document.hidden;
+        const bannerEnabled =
+          typeof window !== 'undefined'
+            ? localStorage.getItem('gcs_notif_banners') !== 'false'
+            : true;
+        if ((msg.conversationId !== activeId || isHidden) && bannerEnabled) {
+          setIncomingNotif({
+            id: msg.id,
+            conversationId: msg.conversationId,
+            senderName,
+            preview: previewSnippet,
+            timestamp: Date.now(),
+          });
+        }
+
+        // 5. Document title alert
+        if (typeof document !== 'undefined' && (isHidden || msg.conversationId !== activeId)) {
+          document.title = `🔔 (1) ${senderName} | GCS CONNECT`;
         }
       }
 
@@ -852,11 +967,14 @@ export default function AppHome() {
       const data = await res.json();
       if (res.ok && data.message) {
         playSound('sent');
-        setMessages((prev) =>
-          prev.map((m) =>
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === data.message.id)) {
+            return prev.filter((m) => m.id !== tempId);
+          }
+          return prev.map((m) =>
             m.id === tempId ? { ...m, id: data.message.id, status: 'sent' } : m
-          )
-        );
+          );
+        });
 
         setConversations((prev) =>
           prev.map((c) =>
@@ -929,6 +1047,8 @@ export default function AppHome() {
         ? 'IMAGE'
         : file.type.startsWith('video/')
         ? 'VIDEO'
+        : file.type.startsWith('audio/')
+        ? 'AUDIO'
         : 'DOCUMENT';
 
       // 3. Post message to /api/conversations/:id/messages
@@ -1426,7 +1546,62 @@ export default function AppHome() {
 
   // 3. Authenticated Workplace View (WhatsApp-Style Structure)
   return (
-    <main className="h-[100dvh] w-screen flex overflow-hidden bg-gcs-bg font-sans safe-top safe-bottom">
+    <main className="h-[100dvh] w-screen flex overflow-hidden bg-gcs-bg font-sans safe-top safe-bottom relative">
+      {/* Floating In-App New Message Notification Banner */}
+      {incomingNotif && (
+        <div
+          onClick={() => {
+            setActiveId(incomingNotif.conversationId);
+            setIncomingNotif(null);
+          }}
+          className="fixed top-3 left-1/2 -translate-x-1/2 max-w-sm sm:max-w-md w-[92%] z-50 bg-[#1f2c34] border border-[#00a884]/60 rounded-2xl p-3 shadow-2xl backdrop-blur-xl flex items-center justify-between gap-3 cursor-pointer hover:bg-[#233138] active:scale-[0.98] transition-all animate-slide-down"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-full bg-[#00a884]/20 border border-[#00a884]/50 flex items-center justify-center text-white shrink-0 font-bold text-sm">
+              <Avatar name={incomingNotif.senderName} size="sm" status="online" />
+            </div>
+            <div className="min-w-0 flex flex-col">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-white truncate">
+                  {incomingNotif.senderName}
+                </span>
+                <span className="text-[10px] text-[#00a884] font-medium font-mono">
+                  New Message
+                </span>
+              </div>
+              <span className="text-xs text-[#d1d7db] truncate mt-0.5">
+                {incomingNotif.preview}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveId(incomingNotif.conversationId);
+                setIncomingNotif(null);
+              }}
+              className="px-2.5 py-1 rounded-lg bg-[#00a884] text-white text-xs font-semibold hover:bg-[#008f6f] transition-colors"
+            >
+              Reply
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIncomingNotif(null);
+              }}
+              className="p-1 text-[#8696a0] hover:text-white rounded-lg transition-colors"
+              title="Dismiss"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar Navigation: full width on mobile when no conversation is active; fixed width on desktop */}
       <div
         className={cn(
@@ -1524,7 +1699,7 @@ export default function AppHome() {
             <div className="relative flex-1 min-h-0">
               <div
                 onScroll={handleMessagesScroll}
-                className="h-full overflow-y-auto p-2.5 sm:p-4 flex flex-col space-y-1.5 scroll-touch whatsapp-chat-bg bg-[#0b141a]"
+                className="h-full overflow-y-auto overflow-x-hidden p-2.5 sm:p-4 flex flex-col space-y-1.5 scroll-touch whatsapp-chat-bg bg-[#0b141a]"
               >
                 <div className="mx-auto my-2 sm:my-3 px-3 py-1 rounded-full bg-gcs-card/80 border border-gcs-border/60 text-[10px] sm:text-[11px] text-gcs-muted text-center max-w-sm flex items-center justify-center gap-1.5 shadow-sm shrink-0">
                   <Lock className="w-3 h-3 text-gcs-emerald shrink-0" />

@@ -162,13 +162,13 @@ export const MessageBubble: React.FC<MessageProps> = ({
     <div
       ref={bubbleContainerRef}
       className={cn(
-        'flex flex-col group my-1 select-text transition-all duration-150',
-        isSentByMe ? 'items-end' : 'items-start'
+        'w-full flex my-1 select-text transition-all duration-150',
+        isSentByMe ? 'justify-end' : 'justify-start'
       )}
     >
       <div
         className={cn(
-          'relative flex items-end gap-1.5 max-w-full',
+          'relative flex items-end gap-1.5 max-w-[85%] sm:max-w-[72%] md:max-w-[65%]',
           isSentByMe ? 'flex-row' : 'flex-row-reverse'
         )}
       >
@@ -249,16 +249,16 @@ export const MessageBubble: React.FC<MessageProps> = ({
           </div>
         )}
 
-        {/* WhatsApp Official Dark Mode Message Bubble */}
+        {/* Encrypted Dark Mode Message Bubble */}
         <div
           onClick={() => setShowActions((prev) => !prev)}
           className={cn(
-            'relative max-w-[86%] sm:max-w-[70%] px-3.5 py-2 rounded-2xl shadow-md text-sm cursor-pointer active:brightness-105 transition-all overflow-hidden break-words [overflow-wrap:anywhere]',
+            'relative w-fit max-w-full px-3 py-2 rounded-2xl shadow-sm text-sm cursor-pointer active:brightness-105 transition-all min-w-[76px]',
             isDeletedForEveryone
               ? 'bg-[#202c33] text-[#8696a0] italic border border-gcs-border/40'
               : isSentByMe
-              ? 'bg-[#005c4b] text-white rounded-tr-none shadow-[0_1px_2px_rgba(0,0,0,0.3)]'
-              : 'bg-[#202c33] text-white rounded-tl-none shadow-[0_1px_2px_rgba(0,0,0,0.3)]'
+              ? 'bg-[#005c4b] text-white rounded-tr-none shadow-[0_1px_2px_rgba(0,0,0,0.3)] bubble-tail-sent'
+              : 'bg-[#202c33] text-white rounded-tl-none shadow-[0_1px_2px_rgba(0,0,0,0.3)] bubble-tail-received'
           )}
         >
           {/* Reply Context */}
@@ -337,12 +337,14 @@ export const MessageBubble: React.FC<MessageProps> = ({
               <span>This message was deleted</span>
             </div>
           ) : (
-            <div className="text-[14.5px] leading-relaxed text-[#e9edef] whitespace-pre-wrap select-text pr-14">
-              {content}
+            <div className="text-[14.5px] leading-relaxed text-[#e9edef] select-text">
+              <span className="whitespace-pre-wrap break-words">{content}</span>
+              {/* Spacer ensuring text doesn't collide with the bottom-right timestamp */}
+              <span className="inline-block w-16 h-3.5 align-middle pointer-events-none" />
             </div>
           )}
 
-          {/* WhatsApp Bottom-Right Inline Timestamp & Status Ticks */}
+          {/* Bottom-Right Inline Timestamp & Status Ticks */}
           <div className="absolute right-2.5 bottom-1.5 flex items-center gap-1 text-[11px] text-[#8696a0] select-none pointer-events-none">
             <span className="leading-none text-[10.5px]">
               {formatChatTime(timestamp)}

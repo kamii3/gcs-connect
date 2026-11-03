@@ -47,8 +47,25 @@ export const WhatsAppSettingsView: React.FC<WhatsAppSettingsViewProps> = ({
   const [newAboutInput, setNewAboutInput] = useState(aboutText);
   const [isSecurityModal, setIsSecurityModal] = useState(false);
   const [isPrivacyModal, setIsPrivacyModal] = useState(false);
+  const [isNotificationsModal, setIsNotificationsModal] = useState(false);
+  const [notifSound, setNotifSound] = useState(true);
+  const [notifBanner, setNotifBanner] = useState(true);
+  const [browserNotifStatus, setBrowserNotifStatus] = useState<string>('default');
   const [readReceipts, setReadReceipts] = useState(true);
   const [isClearChatsConfirm, setIsClearChatsConfirm] = useState(false);
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setBrowserNotifStatus(Notification.permission);
+    }
+  }, [isNotificationsModal]);
+
+  const requestBrowserNotif = async () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      const perm = await Notification.requestPermission();
+      setBrowserNotifStatus(perm);
+    }
+  };
 
   const handleSaveAbout = () => {
     if (newAboutInput.trim()) {
@@ -125,6 +142,27 @@ export const WhatsAppSettingsView: React.FC<WhatsAppSettingsViewProps> = ({
               </span>
               <span className="text-xs text-gcs-muted truncate">
                 Read receipts, last seen, end-to-end status
+              </span>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-gcs-muted shrink-0" />
+        </div>
+
+        {/* Notifications */}
+        <div
+          onClick={() => setIsNotificationsModal(true)}
+          className="p-3.5 px-4 flex items-center justify-between hover:bg-gcs-card/50 cursor-pointer transition-colors"
+        >
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-9 h-9 rounded-full bg-gcs-card border border-gcs-border flex items-center justify-center text-gcs-emerald shrink-0">
+              <Bell className="w-4.5 h-4.5" />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-semibold text-gcs-text">
+                Notifications
+              </span>
+              <span className="text-xs text-gcs-muted truncate">
+                Message tones, push alerts, in-app banners
               </span>
             </div>
           </div>
@@ -354,7 +392,7 @@ export const WhatsAppSettingsView: React.FC<WhatsAppSettingsViewProps> = ({
           <div className="p-3 rounded-xl bg-gcs-sidebar border border-gcs-border space-y-1">
             <span className="font-semibold text-gcs-text block">Chat Wallpaper</span>
             <p className="text-gcs-muted text-[11px]">
-              Chat background is set to the default clean WhatsApp Obsidian Dark mode with zero background image.
+              Chat background is set to the default clean Obsidian Dark mode with zero background image.
             </p>
           </div>
 
@@ -376,6 +414,112 @@ export const WhatsAppSettingsView: React.FC<WhatsAppSettingsViewProps> = ({
           <div className="flex justify-end pt-2">
             <Button variant="ghost" size="sm" onClick={() => setIsClearChatsConfirm(false)}>
               Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Notifications Preferences Modal */}
+      <Modal
+        isOpen={isNotificationsModal}
+        onClose={() => setIsNotificationsModal(false)}
+        title="Notification Settings"
+        description="Manage how and when you receive message alerts."
+      >
+        <div className="flex flex-col gap-4 text-xs mt-1">
+          {/* Browser / Push Notifications */}
+          <div className="p-3 rounded-xl bg-gcs-sidebar border border-gcs-border flex items-center justify-between">
+            <div className="flex flex-col gap-0.5 min-w-0 pr-3">
+              <span className="font-semibold text-gcs-text">Browser Push Alerts</span>
+              <span className="text-gcs-muted text-[11px]">
+                {browserNotifStatus === 'granted'
+                  ? 'Notifications are allowed and active on this browser.'
+                  : browserNotifStatus === 'denied'
+                  ? 'Notifications are blocked in your browser settings.'
+                  : 'Receive system alerts even when the tab is in the background.'}
+              </span>
+            </div>
+            {browserNotifStatus === 'granted' ? (
+              <span className="px-2.5 py-1 bg-gcs-emerald/20 text-gcs-mint border border-gcs-emerald/40 rounded-lg text-[10px] font-bold uppercase shrink-0">
+                Enabled
+              </span>
+            ) : (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={requestBrowserNotif}
+                className="shrink-0 text-xs px-3 py-1.5 h-8 bg-[#00a884] hover:bg-[#008f6f]"
+              >
+                Allow
+              </Button>
+            )}
+          </div>
+
+          {/* In-App Notification Banners */}
+          <div className="p-3 rounded-xl bg-gcs-sidebar border border-gcs-border flex items-center justify-between">
+            <div className="flex flex-col gap-0.5 min-w-0 pr-3">
+              <span className="font-semibold text-gcs-text">In-App Floating Banners</span>
+              <span className="text-gcs-muted text-[11px]">
+                Show a floating preview card when a message arrives while in another chat.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !notifBanner;
+                setNotifBanner(next);
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem('gcs_notif_banners', next ? 'true' : 'false');
+                }
+              }}
+              className={cn(
+                'w-11 h-6 rounded-full transition-colors relative shrink-0',
+                notifBanner ? 'bg-[#00a884]' : 'bg-[#374248]'
+              )}
+            >
+              <div
+                className={cn(
+                  'w-5 h-5 rounded-full bg-white transition-transform absolute top-0.5',
+                  notifBanner ? 'right-0.5' : 'left-0.5'
+                )}
+              />
+            </button>
+          </div>
+
+          {/* Sound Tones */}
+          <div className="p-3 rounded-xl bg-gcs-sidebar border border-gcs-border flex items-center justify-between">
+            <div className="flex flex-col gap-0.5 min-w-0 pr-3">
+              <span className="font-semibold text-gcs-text">Message Sound Chimes</span>
+              <span className="text-gcs-muted text-[11px]">
+                Play audio chimes when messages are sent or received.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !notifSound;
+                setNotifSound(next);
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem('gcs_notif_sounds', next ? 'true' : 'false');
+                }
+              }}
+              className={cn(
+                'w-11 h-6 rounded-full transition-colors relative shrink-0',
+                notifSound ? 'bg-[#00a884]' : 'bg-[#374248]'
+              )}
+            >
+              <div
+                className={cn(
+                  'w-5 h-5 rounded-full bg-white transition-transform absolute top-0.5',
+                  notifSound ? 'right-0.5' : 'left-0.5'
+                )}
+              />
+            </button>
+          </div>
+
+          <div className="flex justify-end pt-1">
+            <Button variant="ghost" size="sm" onClick={() => setIsNotificationsModal(false)}>
+              Done
             </Button>
           </div>
         </div>
