@@ -29,7 +29,7 @@ zip -qr "$PACKAGE" \
   postcss.config.js tailwind.config.js tsconfig.json next-env.d.ts \
   .next prisma public src scripts/build-server.js \
   storage/encrypted_media/.gitkeep storage/vault/.gitkeep .env.example \
-  -x "src/**/*.test.ts" "src/**/*.test.tsx"
+  -x "src/**/*.test.ts" "src/**/*.test.tsx" ".next/cache/*" ".next/cache/**"
 
 echo "=== [3/3] Package Complete ==="
 echo "Artifact: $PACKAGE ($(du -h "$PACKAGE" | cut -f1))"
