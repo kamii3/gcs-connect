@@ -1751,7 +1751,7 @@ router3.post("/register", authenticate, async (req, res) => {
           lastReplenishedAt: /* @__PURE__ */ new Date()
         }
       });
-    });
+    }, { maxWait: 15e3, timeout: 3e4 });
     res.status(201).json({
       success: true,
       message: "Cryptographic keys and prekey inventory registered successfully.",
@@ -1829,7 +1829,7 @@ router3.get("/prekey-bundle/:targetUserId", authenticate, async (req, res) => {
           publicKey: opk.publicKey
         };
       }
-    });
+    }, { maxWait: 15e3, timeout: 3e4 });
     res.json({
       success: true,
       bundle: {
@@ -1882,7 +1882,7 @@ router3.post("/prekeys/replenish", authenticate, async (req, res) => {
           lastReplenishedAt: /* @__PURE__ */ new Date()
         }
       });
-    });
+    }, { maxWait: 15e3, timeout: 3e4 });
     res.json({
       success: true,
       message: "One-Time Prekeys replenished successfully.",

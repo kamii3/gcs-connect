@@ -49,28 +49,30 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 
   // Close dropdown on click outside
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsDropdownOpen(false);
       }
     };
     if (isDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
     };
   }, [isDropdownOpen]);
 
   return (
-    <div className="h-14 sm:h-16 px-2 sm:px-4 bg-gcs-sidebar border-b border-gcs-border flex items-center justify-between select-none relative z-20 shrink-0">
+    <div className="h-14 sm:h-16 px-2 sm:px-4 bg-gcs-sidebar border-b border-gcs-border flex items-center justify-between select-none relative z-20 shrink-0 safe-top">
       {/* Left Section: Back Button + Contact Summary */}
       <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1 mr-2">
         {onBack && (
           <button
             type="button"
             onClick={onBack}
-            className="md:hidden p-2 -ml-1 text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card active:scale-95 rounded-full transition-all shrink-0"
+            className="md:hidden p-2 -ml-1 text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card active:scale-90 rounded-full transition-all shrink-0 flex items-center justify-center min-w-[38px] min-h-[38px]"
             aria-label="Back to conversations"
             title="Back to conversations"
           >

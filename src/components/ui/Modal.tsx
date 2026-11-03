@@ -55,17 +55,22 @@ export const Modal: React.FC<ModalProps> = ({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2.5 sm:p-4 bg-black/80 backdrop-blur-sm animate-fade-in safe-bottom"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm animate-fade-in safe-bottom"
       onClick={onClose}
     >
       <div
         className={cn(
-          'w-full bg-gcs-card border border-gcs-border rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-slide-up max-h-[90dvh]',
+          'w-full bg-gcs-card border border-gcs-border rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-slide-up max-h-[92dvh] sm:max-h-[90dvh]',
           maxWidths[maxWidth],
           className
         )}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Mobile Pull Handle Indicator */}
+        <div className="sm:hidden w-full flex justify-center pt-2.5 pb-1">
+          <div className="sheet-handle" />
+        </div>
+
         {/* Header */}
         <div className="flex items-start justify-between p-4 sm:p-5 border-b border-gcs-border/60 shrink-0">
           <div className="pr-2">
@@ -96,7 +101,7 @@ export const Modal: React.FC<ModalProps> = ({
 
         {/* Footer */}
         {footer && (
-          <div className="flex items-center justify-end gap-2.5 p-3.5 sm:p-4 border-t border-gcs-border/60 bg-gcs-sidebar/40 shrink-0">
+          <div className="flex items-center justify-end gap-2.5 p-3.5 sm:p-4 border-t border-gcs-border/60 bg-gcs-sidebar/40 shrink-0 safe-bottom">
             {footer}
           </div>
         )}

@@ -72,8 +72,8 @@ export const CallModal: React.FC<CallModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in safe-bottom">
-      <div className="relative w-full max-w-lg h-[88dvh] sm:h-[520px] bg-gcs-card border border-gcs-border rounded-3xl shadow-2xl overflow-hidden flex flex-col justify-between p-4 sm:p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in safe-top safe-bottom">
+      <div className="relative w-full max-w-lg h-[92dvh] sm:h-[520px] bg-gcs-card border border-gcs-border rounded-3xl shadow-2xl overflow-hidden flex flex-col justify-between p-4 sm:p-6">
         {/* Video Canvases */}
         {callType === 'video' && status === 'connected' && (
           <div className="absolute inset-0 bg-black flex items-center justify-center">

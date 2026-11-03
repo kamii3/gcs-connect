@@ -130,7 +130,7 @@ router.post('/register', authenticate, async (req: Request, res: Response) => {
           lastReplenishedAt: new Date(),
         },
       });
-    });
+    }, { maxWait: 15000, timeout: 30000 });
 
     res.status(201).json({
       success: true,
@@ -227,7 +227,7 @@ router.get('/prekey-bundle/:targetUserId', authenticate, async (req: Request, re
           publicKey: opk.publicKey,
         };
       }
-    });
+    }, { maxWait: 15000, timeout: 30000 });
 
     res.json({
       success: true,
@@ -291,7 +291,7 @@ router.post('/prekeys/replenish', authenticate, async (req: Request, res: Respon
           lastReplenishedAt: new Date(),
         },
       });
-    });
+    }, { maxWait: 15000, timeout: 30000 });
 
     res.json({
       success: true,

@@ -41,6 +41,7 @@ import {
   MessageSquarePlus,
   CheckCircle2,
   Users,
+  ChevronDown,
 } from 'lucide-react';
 
 interface DirectoryUser {
@@ -103,9 +104,24 @@ export default function AppHome() {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [activeCallerName, setActiveCallerName] = useState<string>('Peer');
 
   const { toast } = useToast();
+
+  // Auto-scroll to latest message on messages update or conversation change
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages.length, activeId]);
+
+  const handleMessagesScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 120;
+    setShowScrollBottom(!isNearBottom);
+  };
 
   // Load conversations from backend
   const loadConversations = useCallback(
@@ -1238,7 +1254,7 @@ export default function AppHome() {
   // 2. Authentication Gate: User MUST login before seeing the chat dashboard
   if (!currentUser) {
     return (
-      <div className="min-h-[100dvh] w-screen flex flex-col items-center justify-center bg-gcs-bg px-3.5 sm:px-4 py-6 sm:py-8 font-sans safe-top safe-bottom">
+      <div className="min-h-[100dvh] w-screen flex flex-col items-center justify-center bg-gcs-bg px-3.5 sm:px-4 py-6 sm:py-8 font-sans safe-top safe-bottom overflow-y-auto">
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] sm:w-[450px] h-[350px] bg-gcs-emerald/5 blur-[100px] sm:blur-[120px] rounded-full pointer-events-none" />
 
         <div className="relative w-full max-w-sm bg-gcs-card border border-gcs-border rounded-2xl shadow-2xl p-5 sm:p-7 animate-fade-in">
@@ -1408,7 +1424,7 @@ export default function AppHome() {
 
   // 3. Authenticated Workplace View (WhatsApp-Style Structure)
   return (
-    <main className="h-[100dvh] w-screen flex overflow-hidden bg-gcs-bg font-sans safe-bottom">
+    <main className="h-[100dvh] w-screen flex overflow-hidden bg-gcs-bg font-sans safe-top safe-bottom">
       {/* Sidebar Navigation: full width on mobile when no conversation is active; fixed width on desktop */}
       <div
         className={cn(
@@ -1496,30 +1512,52 @@ export default function AppHome() {
             />
 
             {/* Chat Messages Stream with cyber-obsidian & emerald theme */}
-            <div className="flex-1 overflow-y-auto p-2.5 sm:p-4 flex flex-col justify-end space-y-1 scroll-touch gcs-cyber-bg">
-              <div className="mx-auto my-2 sm:my-3 px-3 py-1 rounded-full bg-gcs-card/80 border border-gcs-border/60 text-[10px] sm:text-[11px] text-gcs-muted text-center max-w-sm flex items-center justify-center gap-1.5 shadow-sm shrink-0">
-                <Lock className="w-3 h-3 text-gcs-emerald shrink-0" />
-                <span className="truncate">End-to-end encrypted with Web Crypto AES-256-GCM.</span>
+            <div className="relative flex-1 min-h-0">
+              <div
+                onScroll={handleMessagesScroll}
+                className="h-full overflow-y-auto p-2.5 sm:p-4 flex flex-col space-y-1.5 scroll-touch gcs-cyber-bg"
+              >
+                <div className="mx-auto my-2 sm:my-3 px-3 py-1 rounded-full bg-gcs-card/80 border border-gcs-border/60 text-[10px] sm:text-[11px] text-gcs-muted text-center max-w-sm flex items-center justify-center gap-1.5 shadow-sm shrink-0">
+                  <Lock className="w-3 h-3 text-gcs-emerald shrink-0" />
+                  <span className="truncate">End-to-end encrypted with Web Crypto AES-256-GCM.</span>
+                </div>
+
+                {isMessagesLoading ? (
+                  <div className="text-center text-xs text-gcs-muted my-auto py-8 flex items-center justify-center gap-2">
+                    <span className="w-3 h-3 border-2 border-gcs-emerald border-t-transparent rounded-full animate-spin" />
+                    <span>Loading encrypted messages...</span>
+                  </div>
+                ) : messages.length === 0 ? (
+                  <div className="text-center text-xs text-gcs-muted my-auto py-8">
+                    No messages in this chat yet. Send an encrypted message below.
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex-1 min-h-4" />
+                    {messages.map((m) => (
+                      <MessageBubble
+                        key={m.id}
+                        {...m}
+                        onDelete={handleDeleteMessage}
+                        onDownloadAttachment={handleDownloadAttachment}
+                      />
+                    ))}
+                  </>
+                )}
+                <div ref={messagesEndRef} />
               </div>
 
-              {isMessagesLoading ? (
-                <div className="text-center text-xs text-gcs-muted my-auto py-8 flex items-center justify-center gap-2">
-                  <span className="w-3 h-3 border-2 border-gcs-emerald border-t-transparent rounded-full animate-spin" />
-                  <span>Loading encrypted messages...</span>
-                </div>
-              ) : messages.length === 0 ? (
-                <div className="text-center text-xs text-gcs-muted my-auto py-8">
-                  No messages in this chat yet. Send an encrypted message below.
-                </div>
-              ) : (
-                messages.map((m) => (
-                  <MessageBubble
-                    key={m.id}
-                    {...m}
-                    onDelete={handleDeleteMessage}
-                    onDownloadAttachment={handleDownloadAttachment}
-                  />
-                ))
+              {/* Floating Jump-to-Bottom Button */}
+              {showScrollBottom && (
+                <button
+                  type="button"
+                  onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })}
+                  className="absolute bottom-4 right-4 sm:right-6 p-2.5 rounded-full bg-gcs-card/95 border border-gcs-emerald/50 text-gcs-mint shadow-xl hover:bg-gcs-card active:scale-90 transition-all z-20 flex items-center justify-center animate-fade-in"
+                  title="Scroll to latest messages"
+                  aria-label="Scroll to bottom"
+                >
+                  <ChevronDown className="w-4 h-4 text-gcs-emerald" />
+                </button>
               )}
             </div>
 
@@ -1590,7 +1628,7 @@ export default function AppHome() {
               value={directorySearch}
               onChange={(e) => setDirectorySearch(e.target.value)}
               leftIcon={<Search className="w-4 h-4 text-gcs-muted" />}
-              className="h-9 text-xs"
+              className="h-10 text-base sm:text-xs rounded-xl"
             />
           </div>
 
@@ -1604,7 +1642,7 @@ export default function AppHome() {
               <span className="text-[10px] text-gcs-muted font-mono">Active Accounts</span>
             </div>
 
-            <div className="max-h-60 overflow-y-auto divide-y divide-gcs-border/20">
+            <div className="max-h-56 sm:max-h-64 overflow-y-auto divide-y divide-gcs-border/20 scroll-touch">
               {directoryLoading ? (
                 <div className="p-6 text-center text-xs text-gcs-muted flex items-center justify-center gap-2">
                   <span className="w-3 h-3 border-2 border-gcs-emerald border-t-transparent rounded-full animate-spin" />
@@ -1664,14 +1702,14 @@ export default function AppHome() {
                 placeholder="colleague@globalcrestsolutions.com"
                 value={newChatEmail}
                 onChange={(e) => setNewChatEmail(e.target.value)}
-                className="h-8.5 text-xs flex-1"
+                className="h-9.5 text-base sm:text-xs flex-1 rounded-xl"
               />
               <Button
                 variant="outline"
                 size="sm"
                 disabled={isCreatingChat || !newChatEmail.trim()}
                 onClick={handleStartNewChatByEmail}
-                className="h-8.5 text-xs shrink-0"
+                className="h-9.5 px-3 text-xs shrink-0 rounded-xl"
               >
                 Start
               </Button>

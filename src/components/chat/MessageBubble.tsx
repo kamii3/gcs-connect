@@ -75,12 +75,34 @@ export const MessageBubble: React.FC<MessageProps> = ({
   const [showActions, setShowActions] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const bubbleContainerRef = React.useRef<HTMLDivElement>(null);
+
+  // Close actions and dropdown on outside click/tap
+  React.useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent | TouchEvent) => {
+      if (
+        bubbleContainerRef.current &&
+        !bubbleContainerRef.current.contains(event.target as Node)
+      ) {
+        setShowActions(false);
+        setShowMenu(false);
+      }
+    };
+    if (showActions || showMenu) {
+      document.addEventListener('mousedown', handleOutsideClick);
+      document.addEventListener('touchstart', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, [showActions, showMenu]);
 
   // Modern GCS neon status ticks
   const statusIcons = {
-    sending: <Clock className="w-3 h-3 text-emerald-400/60 animate-spin" />,
-    sent: <Check className="w-3.5 h-3.5 text-slate-400" />,
-    delivered: <CheckCheck className="w-3.5 h-3.5 text-slate-400" />,
+    sending: <Clock className="w-3 h-3 text-gcs-emerald/70 animate-spin" />,
+    sent: <Check className="w-3.5 h-3.5 text-gcs-muted" />,
+    delivered: <CheckCheck className="w-3.5 h-3.5 text-gcs-muted" />,
     read: <CheckCheck className="w-3.5 h-3.5 text-[#00F0FF]" />,
   };
 
@@ -140,6 +162,7 @@ export const MessageBubble: React.FC<MessageProps> = ({
   return (
     <>
       <div
+        ref={bubbleContainerRef}
         className={cn(
           'relative flex w-full my-1 animate-fade-in group select-text',
           isSentByMe ? 'justify-end' : 'justify-start'
@@ -149,7 +172,7 @@ export const MessageBubble: React.FC<MessageProps> = ({
         {!isDeletedForEveryone && (
           <div
             className={cn(
-              'absolute top-0 -translate-y-3 flex items-center gap-1 z-10 px-2 py-1 rounded-full bg-slate-900/95 border border-emerald-500/30 shadow-lg transition-all duration-200 backdrop-blur-md',
+              'absolute top-0 -translate-y-3 flex items-center gap-1 z-10 px-2 py-1 rounded-full bg-gcs-card/95 border border-gcs-border shadow-xl transition-all duration-200 backdrop-blur-md',
               isSentByMe ? 'right-2' : 'left-2',
               showActions
                 ? 'opacity-100 pointer-events-auto scale-100'
@@ -159,7 +182,7 @@ export const MessageBubble: React.FC<MessageProps> = ({
             <button
               type="button"
               onClick={handleCopy}
-              className="p-1 hover:text-emerald-300 text-slate-400 rounded transition-colors active:scale-90"
+              className="p-1 hover:text-gcs-mint hover:bg-gcs-emerald/10 text-gcs-muted rounded transition-colors active:scale-90"
               title={copied ? 'Copied!' : 'Copy Text'}
             >
               <Copy className="w-3.5 h-3.5" />
@@ -169,7 +192,7 @@ export const MessageBubble: React.FC<MessageProps> = ({
               <button
                 type="button"
                 onClick={handleDownloadClick}
-                className="p-1 hover:text-emerald-300 text-slate-400 rounded transition-colors active:scale-90"
+                className="p-1 hover:text-gcs-mint hover:bg-gcs-emerald/10 text-gcs-muted rounded transition-colors active:scale-90"
                 title="Download Attachment"
               >
                 <Download className="w-3.5 h-3.5" />
@@ -184,7 +207,7 @@ export const MessageBubble: React.FC<MessageProps> = ({
                     e.stopPropagation();
                     setShowMenu(!showMenu);
                   }}
-                  className="p-1 hover:text-red-400 text-slate-400 rounded transition-colors active:scale-90"
+                  className="p-1 hover:text-red-400 hover:bg-red-500/10 text-gcs-muted rounded transition-colors active:scale-90"
                   title="Delete Message"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -193,7 +216,7 @@ export const MessageBubble: React.FC<MessageProps> = ({
                 {showMenu && (
                   <div
                     className={cn(
-                      'absolute bottom-full mb-1 w-44 bg-slate-900/95 border border-emerald-500/30 rounded-xl shadow-2xl py-1 text-xs z-50 flex flex-col backdrop-blur-md',
+                      'absolute bottom-full mb-1 w-44 bg-gcs-card/95 border border-gcs-border rounded-xl shadow-2xl py-1 text-xs z-50 flex flex-col backdrop-blur-xl',
                       isSentByMe ? 'right-0' : 'left-0'
                     )}
                     onClick={(e) => e.stopPropagation()}
@@ -205,9 +228,9 @@ export const MessageBubble: React.FC<MessageProps> = ({
                           setShowMenu(false);
                           onDelete(id, true);
                         }}
-                        className="px-3 py-2 text-left hover:bg-red-500/20 text-red-300 flex items-center gap-2 transition-colors border-b border-emerald-500/10"
+                        className="px-3 py-2 text-left hover:bg-red-500/20 text-red-300 flex items-center gap-2 transition-colors border-b border-gcs-border/40"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
                         <span>Delete for everyone</span>
                       </button>
                     )}
@@ -217,9 +240,9 @@ export const MessageBubble: React.FC<MessageProps> = ({
                         setShowMenu(false);
                         onDelete(id, false);
                       }}
-                      className="px-3 py-2 text-left hover:bg-slate-800 text-slate-300 flex items-center gap-2 transition-colors"
+                      className="px-3 py-2 text-left hover:bg-gcs-sidebar text-gcs-text flex items-center gap-2 transition-colors"
                     >
-                      <Trash2 className="w-3.5 h-3.5 text-slate-400" />
+                      <Trash2 className="w-3.5 h-3.5 text-gcs-muted" />
                       <span>Delete for me</span>
                     </button>
                   </div>
@@ -235,10 +258,10 @@ export const MessageBubble: React.FC<MessageProps> = ({
           className={cn(
             'relative max-w-[88%] sm:max-w-[72%] px-3.5 py-2.5 rounded-2xl shadow-md text-sm border cursor-pointer active:brightness-105 transition-all overflow-hidden break-words [overflow-wrap:anywhere]',
             isDeletedForEveryone
-              ? 'bg-slate-900/60 text-slate-400 italic border-emerald-500/10'
+              ? 'bg-gcs-card/60 text-gcs-muted italic border-gcs-border/40'
               : isSentByMe
-              ? 'bg-gradient-to-br from-[#00875a] to-[#006e48] text-white border-emerald-400/30 rounded-tr-xs shadow-[0_2px_14px_rgba(0,168,121,0.2)]'
-              : 'bg-[#15201b]/95 text-slate-100 border-[#25382e] rounded-tl-xs shadow-[0_2px_14px_rgba(0,0,0,0.3)] backdrop-blur-sm'
+              ? 'bg-gradient-to-br from-[#00A879] to-[#007D5A] text-white border-emerald-400/30 rounded-tr-xs shadow-[0_2px_14px_rgba(0,168,121,0.22)]'
+              : 'bg-[#1C2520] text-gcs-text border border-gcs-border/80 rounded-tl-xs shadow-[0_2px_12px_rgba(0,0,0,0.35)] backdrop-blur-xs'
           )}
         >
           {/* Reply Context */}
@@ -326,23 +349,23 @@ export const MessageBubble: React.FC<MessageProps> = ({
                   url={attachment.url}
                   fileName={attachment.fileName}
                   fileSizeBytes={attachment.fileSizeBytes}
-                  onDownload={handleDownloadClick}
+                  onDownload={() => handleDownloadClick({ stopPropagation: () => {} } as React.MouseEvent)}
                 />
               ) : (
                 /* Document File Card */
                 <div
                   onClick={handleDownloadClick}
-                  className="p-3 flex items-center justify-between gap-3 hover:bg-black/40 transition-colors cursor-pointer"
+                  className="p-3 flex items-center justify-between gap-3 hover:bg-black/40 transition-colors cursor-pointer rounded-xl bg-black/20 border border-gcs-border/40"
                 >
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <div className="h-10 w-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                    <div className="h-10 w-10 rounded-xl bg-gcs-emerald/20 border border-gcs-emerald/30 flex items-center justify-center shrink-0">
                       {getDocumentIcon(attachment.fileName, attachment.mimeType)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <span className="text-xs font-semibold text-slate-100 block truncate leading-tight">
+                      <span className="text-xs font-semibold text-gcs-text block truncate leading-tight">
                         {attachment.fileName}
                       </span>
-                      <span className="text-[10px] text-slate-400 block font-mono mt-0.5">
+                      <span className="text-[10px] text-gcs-muted block font-mono mt-0.5">
                         {formatFileSize(attachment.fileSizeBytes) || 'Encrypted Document'}
                       </span>
                     </div>
@@ -350,7 +373,7 @@ export const MessageBubble: React.FC<MessageProps> = ({
                   <button
                     type="button"
                     onClick={handleDownloadClick}
-                    className="p-2 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500 hover:text-slate-950 transition-colors shrink-0"
+                    className="p-2 rounded-lg bg-gcs-emerald/20 text-gcs-mint hover:bg-gcs-emerald hover:text-white transition-colors shrink-0"
                     title="Download File"
                   >
                     <Download className="w-4 h-4" />

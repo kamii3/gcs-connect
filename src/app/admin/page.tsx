@@ -627,27 +627,27 @@ export default function AdminDashboardPage() {
   return (
     <div className="min-h-[100dvh] bg-gcs-bg text-gcs-text flex flex-col font-sans safe-bottom">
       {/* Top Navigation Bar */}
-      <header className="border-b border-gcs-border bg-gcs-sidebar/95 backdrop-blur-md sticky top-0 z-30 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
+      <header className="border-b border-gcs-border bg-gcs-sidebar/95 backdrop-blur-md sticky top-0 z-30 px-3 sm:px-6 py-2.5 sm:py-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 safe-top">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gcs-emerald/20 border border-gcs-emerald/40 flex items-center justify-center shadow-lg shadow-gcs-emerald/10">
+          <div className="w-9 h-9 rounded-xl bg-gcs-emerald/20 border border-gcs-emerald/40 flex items-center justify-center shadow-lg shadow-gcs-emerald/10 shrink-0">
             <ShieldCheck className="w-5 h-5 text-gcs-emerald" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold text-gcs-text tracking-wide">GCS CONNECT</h1>
-              <Badge variant="emerald" className="font-mono text-[10px] tracking-wider uppercase">
+              <h1 className="text-sm sm:text-base font-bold text-gcs-text tracking-wide">GCS CONNECT</h1>
+              <Badge variant="emerald" className="font-mono text-[9px] sm:text-[10px] tracking-wider uppercase">
                 ADMIN CONSOLE
               </Badge>
             </div>
-            <p className="text-xs text-gcs-muted font-mono">
+            <p className="text-[10.5px] sm:text-xs text-gcs-muted font-mono truncate">
               Zero-Knowledge End-to-End Cryptographic Administration
             </p>
           </div>
         </div>
 
         {/* Global Controls & Status */}
-        <div className="flex items-center gap-2.5">
-          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gcs-card border border-gcs-border text-xs text-gcs-muted">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap w-full md:w-auto justify-end">
+          <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gcs-card border border-gcs-border text-xs text-gcs-muted">
             <span className="w-2 h-2 rounded-full bg-gcs-emerald animate-pulse" />
             <span className="text-gcs-mint font-medium">DTLS & X3DH Engine Online</span>
           </div>
@@ -657,7 +657,7 @@ export default function AdminDashboardPage() {
             size="sm"
             onClick={reloadData}
             disabled={loading}
-            className="flex items-center gap-1.5 text-xs"
+            className="flex items-center gap-1.5 text-xs h-8 px-2.5 sm:px-3"
           >
             <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
             Sync
@@ -672,10 +672,10 @@ export default function AdminDashboardPage() {
               setPasswordChangeSuccess(null);
               setPasswordChangeError(null);
             }}
-            className="flex items-center gap-1.5 text-xs border-gcs-border text-gcs-mint hover:bg-gcs-card"
+            className="flex items-center gap-1.5 text-xs border-gcs-border text-gcs-mint hover:bg-gcs-card h-8 px-2.5 sm:px-3"
           >
             <KeyRound className="w-3.5 h-3.5 text-gcs-emerald" />
-            Admin Password
+            <span className="hidden xs:inline">Admin</span> Password
           </Button>
 
           <Button
@@ -686,10 +686,10 @@ export default function AdminDashboardPage() {
               setGeneratedInviteLink(null);
               setInviteEmail('');
             }}
-            className="flex items-center gap-1.5 text-xs border-gcs-emerald/30 text-gcs-mint hover:bg-gcs-card"
+            className="flex items-center gap-1.5 text-xs border-gcs-emerald/30 text-gcs-mint hover:bg-gcs-card h-8 px-2.5 sm:px-3"
           >
             <Link2 className="w-3.5 h-3.5 text-gcs-emerald" />
-            Invite Link
+            Invite
           </Button>
 
           <Button
@@ -700,7 +700,7 @@ export default function AdminDashboardPage() {
               setCreatedChatLink(null);
               setCreatedRegisterLink(null);
             }}
-            className="flex items-center gap-1.5 text-xs bg-gcs-emerald hover:bg-[#00c28c]"
+            className="flex items-center gap-1.5 text-xs bg-gcs-emerald hover:bg-[#00c28c] h-8 px-2.5 sm:px-3"
           >
             <UserPlus className="w-3.5 h-3.5" />
             New User
@@ -710,7 +710,7 @@ export default function AdminDashboardPage() {
             <Button
               variant="ghost"
               size="sm"
-              className="flex items-center gap-1 text-xs text-gcs-muted hover:text-gcs-text"
+              className="flex items-center gap-1 text-xs text-gcs-muted hover:text-gcs-text h-8 px-2"
             >
               <ExternalLink className="w-3 h-3" />
               Chat
@@ -720,11 +720,11 @@ export default function AdminDashboardPage() {
       </header>
 
       {/* Navigation Sub-header (Tabs) */}
-      <div className="border-b border-gcs-border bg-gcs-sidebar px-6 py-2 flex gap-4 text-sm font-medium">
+      <div className="border-b border-gcs-border bg-gcs-sidebar px-3 sm:px-6 py-2 flex gap-2 sm:gap-4 text-xs sm:text-sm font-medium overflow-x-auto no-scrollbar scroll-touch">
         <button
           onClick={() => setActiveTab('overview')}
           className={cn(
-            'px-3 py-2 rounded-lg transition-colors flex items-center gap-2',
+            'px-3 py-1.5 sm:py-2 rounded-lg transition-colors flex items-center gap-2 shrink-0 active:scale-95',
             activeTab === 'overview'
               ? 'bg-gcs-emerald/15 text-gcs-emerald font-semibold border border-gcs-emerald/30'
               : 'text-gcs-muted hover:text-gcs-text'
@@ -740,7 +740,7 @@ export default function AdminDashboardPage() {
             fetchUsers();
           }}
           className={cn(
-            'px-3 py-2 rounded-lg transition-colors flex items-center gap-2',
+            'px-3 py-1.5 sm:py-2 rounded-lg transition-colors flex items-center gap-2 shrink-0 active:scale-95',
             activeTab === 'users'
               ? 'bg-gcs-emerald/15 text-gcs-emerald font-semibold border border-gcs-emerald/30'
               : 'text-gcs-muted hover:text-gcs-text'

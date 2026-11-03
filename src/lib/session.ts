@@ -13,7 +13,8 @@ export interface SessionTokenPayload {
   sessionId: string;
   deviceId: string;
   email: string;
-  role: string;
+  role?: string;
+  roles?: string[];
 }
 
 export const SESSION_COOKIE_NAME =

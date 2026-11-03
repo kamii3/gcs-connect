@@ -6,6 +6,10 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     exclude: ['node_modules', 'references', '.next'],
     environment: 'node',
+    fileParallelism: false,
+    maxWorkers: 1,
+    testTimeout: 30000,
+    hookTimeout: 30000,
   },
   resolve: {
     alias: {

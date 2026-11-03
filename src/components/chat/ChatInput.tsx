@@ -34,7 +34,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onSendFile,
   isSending = false,
   disabled = false,
-  placeholder = 'Type an end-to-end encrypted message or paste link...',
+  placeholder = 'Type an end-to-end encrypted message...',
 }) => {
   const [text, setText] = useState('');
   const [showAttachMenu, setShowAttachMenu] = useState(false);
@@ -42,6 +42,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [recordingSeconds, setRecordingSeconds] = useState(0);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const attachMenuRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -49,6 +50,23 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Close attachment menu on outside click or touch
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (attachMenuRef.current && !attachMenuRef.current.contains(event.target as Node)) {
+        setShowAttachMenu(false);
+      }
+    };
+    if (showAttachMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [showAttachMenu]);
 
   const handleSend = () => {
     if (!text.trim() || isSending || disabled) return;
@@ -169,7 +187,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   return (
-    <div className="relative p-2 sm:p-3 bg-slate-950/80 border-t border-emerald-500/20 flex flex-col gap-1 select-none shrink-0 safe-bottom backdrop-blur-md">
+    <div className="relative p-2 sm:p-3 bg-gcs-sidebar/95 border-t border-gcs-border/80 flex flex-col gap-1 select-none shrink-0 safe-bottom backdrop-blur-md">
       {/* Hidden Native File Pickers */}
       <input
         type="file"
@@ -195,7 +213,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
       {/* Attachment Menu Popup */}
       {showAttachMenu && (
-        <div className="absolute bottom-16 sm:bottom-18 left-2 sm:left-4 z-40 bg-slate-900/95 border border-emerald-500/30 rounded-2xl p-2 shadow-2xl flex flex-col gap-1 animate-slide-up w-52 backdrop-blur-xl">
+        <div
+          ref={attachMenuRef}
+          className="absolute bottom-16 sm:bottom-18 left-2 sm:left-4 z-40 bg-gcs-card/95 border border-gcs-border rounded-2xl p-2 shadow-2xl flex flex-col gap-1 animate-slide-up w-56 backdrop-blur-2xl"
+        >
           <button
             type="button"
             onClick={() => {
@@ -203,9 +224,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               onAttachFile?.('image');
               imageInputRef.current?.click();
             }}
-            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-100 hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors text-left active:scale-98 cursor-pointer"
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-gcs-text hover:bg-gcs-emerald/20 hover:text-gcs-mint transition-colors text-left active:scale-98 cursor-pointer"
           >
-            <div className="h-7 w-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+            <div className="h-7 w-7 rounded-lg bg-gcs-emerald/20 text-gcs-emerald flex items-center justify-center shrink-0">
               <Image className="w-4 h-4" />
             </div>
             <span>Photos & Videos</span>
@@ -218,7 +239,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               onAttachFile?.('audio');
               audioInputRef.current?.click();
             }}
-            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-100 hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors text-left active:scale-98 cursor-pointer"
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-gcs-text hover:bg-gcs-emerald/20 hover:text-gcs-mint transition-colors text-left active:scale-98 cursor-pointer"
           >
             <div className="h-7 w-7 rounded-lg bg-cyan-500/20 text-[#00F0FF] flex items-center justify-center shrink-0">
               <Music className="w-4 h-4" />
@@ -233,7 +254,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               onAttachFile?.('document');
               docInputRef.current?.click();
             }}
-            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-100 hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors text-left active:scale-98 cursor-pointer"
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-gcs-text hover:bg-gcs-emerald/20 hover:text-gcs-mint transition-colors text-left active:scale-98 cursor-pointer"
           >
             <div className="h-7 w-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
               <FileText className="w-4 h-4" />
@@ -245,7 +266,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
       {/* Main Input Row or Active Voice Recording Bar */}
       {isRecording ? (
-        <div className="flex items-center justify-between gap-3 bg-slate-900 border border-red-500/40 rounded-2xl p-2 animate-pulse">
+        <div className="flex items-center justify-between gap-3 bg-gcs-card border border-red-500/40 rounded-2xl p-2 animate-pulse">
           <div className="flex items-center gap-2 text-red-400">
             <Radio className="w-4 h-4 animate-ping" />
             <span className="text-xs font-bold font-mono tracking-wider">
@@ -253,13 +274,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             </span>
           </div>
 
-          <span className="text-[11px] text-slate-400">Recording encrypted voice note...</span>
+          <span className="text-[11px] text-gcs-muted truncate">Recording encrypted voice note...</span>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
               onClick={cancelRecording}
-              className="p-2 rounded-full hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-colors"
+              className="p-2 rounded-full hover:bg-red-500/20 text-gcs-muted hover:text-red-400 transition-colors"
               title="Cancel"
             >
               <Trash2 className="w-4 h-4" />
@@ -267,7 +288,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             <button
               type="button"
               onClick={stopRecording}
-              className="h-8 px-3 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-md active:scale-95 transition-all"
+              className="h-8 px-3 rounded-full bg-gcs-emerald hover:bg-[#00c28c] text-white font-bold text-xs flex items-center gap-1.5 shadow-md active:scale-95 transition-all"
               title="Send Voice Note"
             >
               <Send className="w-3.5 h-3.5 fill-current" />
@@ -276,7 +297,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           </div>
         </div>
       ) : (
-        <div className="flex items-end gap-1.5 sm:gap-2 bg-slate-900/90 border border-emerald-500/30 focus-within:border-emerald-400 focus-within:ring-1 focus-within:ring-emerald-400/30 rounded-2xl p-1 sm:p-1.5 transition-all shadow-inner">
+        <div className="flex items-end gap-1.5 sm:gap-2 bg-gcs-card/90 border border-gcs-border focus-within:border-gcs-emerald focus-within:ring-1 focus-within:ring-gcs-emerald/30 rounded-2xl p-1 sm:p-1.5 transition-all shadow-inner">
           {/* Attachment Trigger */}
           <Button
             type="button"
@@ -284,8 +305,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             size="icon"
             onClick={() => setShowAttachMenu(!showAttachMenu)}
             className={cn(
-              'h-9 w-9 text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/10 shrink-0 rounded-full transition-all',
-              showAttachMenu && 'text-emerald-300 bg-emerald-500/20 rotate-45'
+              'h-9 w-9 text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card/60 shrink-0 rounded-full transition-all',
+              showAttachMenu && 'text-gcs-mint bg-gcs-emerald/20 rotate-45'
             )}
             aria-label="Attach File"
           >
@@ -301,7 +322,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             onKeyDown={handleKeyDown}
             disabled={disabled || isSending}
             placeholder={placeholder}
-            className="flex-1 bg-transparent text-slate-100 placeholder:text-slate-500 text-base sm:text-sm focus:outline-none resize-none max-h-32 py-2 px-1.5 leading-relaxed select-text min-h-[38px]"
+            className="flex-1 bg-transparent text-gcs-text placeholder:text-gcs-muted/60 text-base sm:text-sm focus:outline-none resize-none max-h-32 py-2 px-1.5 leading-relaxed select-text min-h-[38px]"
           />
 
           {/* Send or Voice Note Button */}
@@ -313,10 +334,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               onClick={handleSend}
               isLoading={isSending}
               disabled={disabled}
-              className="h-9 w-9 shrink-0 rounded-full bg-emerald-500 hover:bg-emerald-400 shadow-[0_0_12px_rgba(0,168,121,0.4)] transition-all active:scale-95"
+              className="h-9 w-9 shrink-0 rounded-full bg-gcs-emerald hover:bg-[#00c28c] text-white shadow-emerald-md transition-all active:scale-95"
               aria-label="Send Encrypted Message"
             >
-              <Send className="w-4 h-4 text-slate-950 fill-current" />
+              <Send className="w-4 h-4 text-white fill-current" />
             </Button>
           ) : (
             <Button
@@ -325,7 +346,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               size="icon"
               onClick={startRecording}
               disabled={disabled}
-              className="h-9 w-9 text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/15 shrink-0 rounded-full transition-all active:scale-90"
+              className="h-9 w-9 text-gcs-muted hover:text-gcs-mint hover:bg-gcs-emerald/15 shrink-0 rounded-full transition-all active:scale-90"
               aria-label="Record Voice Note"
               title="Record Voice Note"
             >
@@ -336,8 +357,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       )}
 
       {/* Security Footer Banner */}
-      <div className="flex items-center justify-center gap-1.5 text-[10px] sm:text-[11px] text-slate-500 pt-0.5 truncate">
-        <Lock className="w-3 h-3 text-emerald-400/70 shrink-0" />
+      <div className="flex items-center justify-center gap-1.5 text-[10px] sm:text-[11px] text-gcs-muted/70 pt-0.5 truncate">
+        <Lock className="w-3 h-3 text-gcs-emerald shrink-0" />
         <span className="truncate">GCS Cyber-Shield • AES-256-GCM Zero-Plaintext Security</span>
       </div>
     </div>

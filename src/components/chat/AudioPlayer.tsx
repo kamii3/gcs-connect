@@ -76,20 +76,20 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-2 p-2.5 rounded-xl bg-black/25 border border-emerald-500/20 w-64 sm:w-72">
+    <div className="flex flex-col gap-2 p-2.5 rounded-xl bg-black/25 border border-gcs-border/60 w-64 sm:w-72">
       {url && <audio ref={audioRef} src={url} preload="metadata" />}
 
       {/* Header Info */}
       <div className="flex items-center justify-between gap-2 min-w-0">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="h-7 w-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+          <div className="h-7 w-7 rounded-lg bg-gcs-emerald/20 text-gcs-emerald flex items-center justify-center shrink-0">
             <Music className="w-3.5 h-3.5" />
           </div>
           <div className="min-w-0 flex-1">
-            <span className="text-xs font-semibold text-slate-100 block truncate leading-tight">
+            <span className="text-xs font-semibold text-gcs-text block truncate leading-tight">
               {fileName}
             </span>
-            <span className="text-[10px] text-slate-400 block font-mono">
+            <span className="text-[10px] text-gcs-muted block font-mono">
               {formatFileSize(fileSizeBytes) || 'Encrypted Audio'}
             </span>
           </div>
@@ -99,7 +99,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           <button
             type="button"
             onClick={onDownload}
-            className="p-1 rounded-md text-slate-400 hover:text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+            className="p-1 rounded-md text-gcs-muted hover:text-gcs-mint hover:bg-gcs-emerald/20 transition-colors"
             title="Download Audio"
           >
             <Download className="w-3.5 h-3.5" />
@@ -113,7 +113,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           type="button"
           onClick={togglePlay}
           disabled={!url}
-          className="h-8 w-8 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center shrink-0 hover:bg-emerald-400 active:scale-95 transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+          className="h-8 w-8 rounded-full bg-gcs-emerald text-white flex items-center justify-center shrink-0 hover:bg-[#00c28c] active:scale-95 transition-all shadow-sm disabled:opacity-50 cursor-pointer"
         >
           {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
         </button>
@@ -126,9 +126,9 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
             value={currentTime}
             onChange={handleSeek}
             disabled={!url}
-            className="w-full h-1.5 bg-slate-700/80 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+            className="w-full h-1.5 bg-gcs-border rounded-lg appearance-none cursor-pointer accent-gcs-emerald"
           />
-          <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+          <div className="flex justify-between text-[10px] text-gcs-muted font-mono">
             <span>{formatTime(currentTime)}</span>
             <span>{formatTime(duration)}</span>
           </div>

@@ -72,7 +72,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <div className="w-full md:w-80 lg:w-96 h-full bg-gcs-sidebar md:border-r border-gcs-border flex flex-col select-none">
       {/* App Brand Header */}
-      <div className="p-3.5 sm:p-4 border-b border-gcs-border/60 flex items-center justify-between shrink-0">
+      <div className="p-3.5 sm:p-4 border-b border-gcs-border/60 flex items-center justify-between shrink-0 safe-top">
         <div className="flex items-center gap-2.5">
           <div className="h-8.5 w-8.5 rounded-xl bg-gcs-emerald/20 border border-gcs-emerald/40 flex items-center justify-center text-gcs-emerald font-bold text-sm shadow-emerald-sm shrink-0">
             <Shield className="w-4.5 h-4.5 text-gcs-emerald" />
@@ -244,7 +244,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             e.stopPropagation();
                             onDeleteConversation(item.id, e);
                           }}
-                          className="opacity-60 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 rounded-lg hover:bg-red-500/20 text-gcs-muted hover:text-red-400 active:scale-95 transition-all"
+                          className="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 rounded-lg hover:bg-red-500/20 text-gcs-muted hover:text-red-400 active:scale-95 transition-all"
                           title="Delete Chat"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -260,7 +260,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* User Footer Bar */}
-      <div className="p-3 border-t border-gcs-border/60 bg-gcs-bg flex items-center justify-between">
+      <div className="p-3 border-t border-gcs-border/60 bg-gcs-bg flex items-center justify-between safe-bottom">
         <div className="flex items-center gap-2.5 min-w-0">
           <Avatar name={currentUserName} size="sm" status="online" />
           <div className="min-w-0">

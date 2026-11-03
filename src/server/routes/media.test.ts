@@ -246,7 +246,7 @@ describe('Phase 6: Encrypted Media & File Sharing API', () => {
     expect(dbRecord?.storagePath).toBeDefined();
 
     // Verify storage file on disk contains ciphertext (not plaintext)
-    const diskBytes = await fs.readFile(dbRecord!.storagePath);
+    const diskBytes = await fs.readFile(dbRecord!.storagePath!);
     expect(new Uint8Array(diskBytes)).toEqual(encryptedPackage.ciphertextBuffer);
     expect(new Uint8Array(diskBytes)).not.toEqual(originalImageBytes);
   });
