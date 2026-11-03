@@ -3268,7 +3268,19 @@ router6.get("/blocked", authenticate, async (req, res) => {
 router6.get("/directory", authenticate, async (req, res) => {
   try {
     const callerId = req.user.id;
-    const query = req.query.q || "";
+    const callerRoles = req.user.roles || [];
+    const isAdmin = callerRoles.includes("SUPER_ADMIN") || callerRoles.includes("ADMIN");
+    const query = (req.query.q || "").trim();
+    if (!isAdmin && query.length < 2) {
+      res.json({
+        success: true,
+        users: [],
+        isAdmin: false,
+        requiresSearch: true,
+        message: "Please enter at least 2 characters to search for a colleague by name or email."
+      });
+      return;
+    }
     const activeBlocks = await db_default.userBlock.findMany({
       where: {
         OR: [{ blockerUserId: callerId }, { blockedUserId: callerId }]
@@ -3287,11 +3299,11 @@ router6.get("/directory", authenticate, async (req, res) => {
       id: { notIn: Array.from(excludedUserIds) },
       status: "ACTIVE"
     };
-    if (query.trim().length > 0) {
+    if (query.length > 0) {
       whereClause.OR = [
-        { fullName: { contains: query.trim() } },
-        { displayName: { contains: query.trim() } },
-        { email: { contains: query.trim() } }
+        { fullName: { contains: query } },
+        { displayName: { contains: query } },
+        { email: { contains: query } }
       ];
     }
     const users = await db_default.user.findMany({
@@ -3303,11 +3315,13 @@ router6.get("/directory", authenticate, async (req, res) => {
         email: true,
         avatarUrl: true
       },
-      take: 20
+      orderBy: { fullName: "asc" },
+      take: isAdmin && query.length === 0 ? 100 : 25
     });
     res.json({
       success: true,
-      users
+      users,
+      isAdmin
     });
   } catch (error) {
     console.error("[UserDirectoryError]", error);

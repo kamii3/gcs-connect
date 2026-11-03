@@ -139,12 +139,29 @@ router.get('/blocked', authenticate, async (req: Request, res: Response) => {
 
 /**
  * GET /api/users/directory
- * Search directory for active users (excluding blocked users and self)
+ * Search directory for active users (excluding blocked users and self).
+ * Privacy Policy: Regular registered users are NOT permitted to view or dump the
+ * existing user database. They may only search for colleagues by name or email.
+ * Only administrators (ADMIN, SUPER_ADMIN) have permission to view all users.
  */
 router.get('/directory', authenticate, async (req: Request, res: Response) => {
   try {
     const callerId = req.user!.id;
-    const query = (req.query.q as string) || '';
+    const callerRoles = req.user!.roles || [];
+    const isAdmin = callerRoles.includes('SUPER_ADMIN') || callerRoles.includes('ADMIN');
+    const query = ((req.query.q as string) || '').trim();
+
+    // Privacy guard: Regular users are prohibited from browsing the user database without searching
+    if (!isAdmin && query.length < 2) {
+      res.json({
+        success: true,
+        users: [],
+        isAdmin: false,
+        requiresSearch: true,
+        message: 'Please enter at least 2 characters to search for a colleague by name or email.',
+      });
+      return;
+    }
 
     // Find any blocks involving caller
     const activeBlocks = await prisma.userBlock.findMany({
@@ -168,11 +185,11 @@ router.get('/directory', authenticate, async (req: Request, res: Response) => {
       status: 'ACTIVE',
     };
 
-    if (query.trim().length > 0) {
+    if (query.length > 0) {
       whereClause.OR = [
-        { fullName: { contains: query.trim() } },
-        { displayName: { contains: query.trim() } },
-        { email: { contains: query.trim() } },
+        { fullName: { contains: query } },
+        { displayName: { contains: query } },
+        { email: { contains: query } },
       ];
     }
 
@@ -185,12 +202,14 @@ router.get('/directory', authenticate, async (req: Request, res: Response) => {
         email: true,
         avatarUrl: true,
       },
-      take: 20,
+      orderBy: { fullName: 'asc' },
+      take: isAdmin && query.length === 0 ? 100 : 25,
     });
 
     res.json({
       success: true,
       users,
+      isAdmin,
     });
   } catch (error: any) {
     console.error('[UserDirectoryError]', error);
