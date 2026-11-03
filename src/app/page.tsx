@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Sidebar, ConversationItem } from '../components/chat/Sidebar';
 import { ChatHeader } from '../components/chat/ChatHeader';
 import { MessageBubble, MessageProps } from '../components/chat/MessageBubble';
-import { ChatInput } from '../components/chat/ChatInput';
+import { ChatInput, ReplyContext } from '../components/chat/ChatInput';
 import { CallModal } from '../components/chat/CallModal';
 import { InstallAppModal } from '../components/ui/InstallAppModal';
 import { Drawer } from '../components/ui/Drawer';
@@ -116,6 +116,10 @@ export default function AppHome() {
     preview: string;
     timestamp: number;
   } | null>(null);
+  const [replyTarget, setReplyTarget] = useState<ReplyContext | null>(null);
+  const [typingUsers, setTypingUsers] = useState<Record<string, { userId: string; displayName?: string }>>({});
+  const typingTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const [lastSeenMap, setLastSeenMap] = useState<Record<string, string | Date | number>>({});
 
   const prevActiveIdRef = useRef<string | undefined>(activeId);
   const prevMsgCountRef = useRef<number>(messages.length);
@@ -192,12 +196,18 @@ export default function AppHome() {
               }
             }
 
+            const peerLastSeen = c.lastSeenAt || c.members?.find((m: any) => m.userId !== currentUser?.id)?.lastSeenAt;
+            if (peerUserId && peerLastSeen) {
+              setLastSeenMap((prev) => ({ ...prev, [peerUserId]: peerLastSeen }));
+            }
+
             return {
               id: c.id,
               name: c.title || 'Encrypted Direct Chat',
               avatarSrc: c.avatarUrl,
               peerUserId,
               status: 'offline', // dynamic in displayConversations
+              lastSeenAt: peerLastSeen,
               lastMessage: lastMsgText,
               lastMessageTime: c.latestMessage ? c.latestMessage.createdAt : c.updatedAt,
               lastMessageStatus: c.latestMessage?.isFromMe ? 'sent' : undefined,
@@ -209,6 +219,11 @@ export default function AppHome() {
           });
 
           setConversations(formatted);
+
+          // Auto-join conversation rooms to receive peer typing notifications across all chats
+          formatted.forEach((item) => {
+            realtimeSocket.joinConversation(item.id);
+          });
 
           // Query presence of peers
           if (peerIds.length > 0) {
@@ -379,7 +394,7 @@ export default function AppHome() {
     }
 
     // 1. Presence updates
-    const unsubPresence = realtimeSocket.onPresence(({ userId, status }) => {
+    const unsubPresence = realtimeSocket.onPresence(({ userId, status, timestamp }: any) => {
       setOnlineUserIds((prev) => {
         const next = new Set(prev);
         if (status === 'ONLINE') {
@@ -389,6 +404,46 @@ export default function AppHome() {
         }
         return next;
       });
+      if (status === 'OFFLINE' && timestamp) {
+        setLastSeenMap((prev) => ({ ...prev, [userId]: timestamp }));
+      }
+    });
+
+    // 1b. Real-time typing indicators
+    const unsubTyping = realtimeSocket.onTyping((event) => {
+      if (!event || event.userId === currentUser?.id) return;
+      const convId = event.conversationId;
+
+      if (event.isTyping) {
+        const prevTimer = typingTimersRef.current.get(convId);
+        if (prevTimer) clearTimeout(prevTimer);
+
+        const timer = setTimeout(() => {
+          setTypingUsers((prev) => {
+            const next = { ...prev };
+            delete next[convId];
+            return next;
+          });
+          typingTimersRef.current.delete(convId);
+        }, 3500);
+        typingTimersRef.current.set(convId, timer);
+
+        setTypingUsers((prev) => ({
+          ...prev,
+          [convId]: { userId: event.userId, displayName: event.displayName },
+        }));
+      } else {
+        const prevTimer = typingTimersRef.current.get(convId);
+        if (prevTimer) {
+          clearTimeout(prevTimer);
+          typingTimersRef.current.delete(convId);
+        }
+        setTypingUsers((prev) => {
+          const next = { ...prev };
+          delete next[convId];
+          return next;
+        });
+      }
     });
 
     // 2. Incoming call listener
@@ -472,6 +527,16 @@ export default function AppHome() {
           text = 'Encrypted message';
         }
 
+        let replyObj: any = undefined;
+        if (text.startsWith('{"type":"REPLY"') || text.startsWith('{"replyTo"')) {
+          try {
+            const parsed = JSON.parse(text);
+            replyObj = parsed.replyTo;
+            text = parsed.text || '';
+            previewSnippet = text || 'Replied to a message';
+          } catch {}
+        }
+
         if (text.startsWith('{"type":"MEDIA"') || text.startsWith('{"mediaKey"')) {
           try {
             const parsed = JSON.parse(text);
@@ -498,7 +563,7 @@ export default function AppHome() {
           } catch {
             previewSnippet = '📎 File attachment';
           }
-        } else {
+        } else if (!replyObj) {
           previewSnippet = text;
         }
       }
@@ -509,12 +574,14 @@ export default function AppHome() {
           id: msg.id,
           senderName,
           content: text,
+          replyTo: replyObj,
           timestamp: new Date(msg.createdAt).getTime(),
           isSentByMe: isMe,
           status: 'delivered',
           isEncrypted: true,
           isDeletedForEveryone: msg.isDeletedForEveryone,
           attachment: attachmentObj,
+          reactions: [],
         };
 
         setMessages((prev) => {
@@ -619,12 +686,65 @@ export default function AppHome() {
       loadConversations(activeId);
     });
 
+    // 6. Real-time message reaction updates
+    const unsubReaction = realtimeSocket.onReaction((data: any) => {
+      if (!data || data.conversationId !== activeId) return;
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== data.messageId) return m;
+          const isCurrentUser = data.userId === currentUser?.id;
+          const currentReactions = m.reactions || [];
+          const match = currentReactions.find((r) => r.emoji === data.emoji);
+
+          let updated = [...currentReactions];
+          if (data.action === 'added') {
+            if (match) {
+              updated = updated.map((r) =>
+                r.emoji === data.emoji
+                  ? {
+                      ...r,
+                      count: r.hasReacted && isCurrentUser ? r.count : r.count + 1,
+                      hasReacted: isCurrentUser ? true : r.hasReacted,
+                    }
+                  : r
+              );
+            } else {
+              updated.push({
+                emoji: data.emoji,
+                count: 1,
+                hasReacted: isCurrentUser,
+              });
+            }
+          } else if (data.action === 'removed') {
+            if (match) {
+              if (match.count <= 1) {
+                updated = updated.filter((r) => r.emoji !== data.emoji);
+              } else {
+                updated = updated.map((r) =>
+                  r.emoji === data.emoji
+                    ? {
+                        ...r,
+                        count: Math.max(1, r.count - 1),
+                        hasReacted: isCurrentUser ? false : r.hasReacted,
+                      }
+                    : r
+                );
+              }
+            }
+          }
+          return { ...m, reactions: updated };
+        })
+      );
+    });
+
     return () => {
       unsubPresence();
+      unsubTyping();
       unsubIncomingCall();
       unsubMediaReady();
       unsubReceipt();
       unsubMessage();
+      unsubReaction();
     };
   }, [currentUser, activeId, loadConversations]);
 
@@ -730,6 +850,15 @@ export default function AppHome() {
                   text = m.encryptedPayload || 'Encrypted message';
                 }
 
+                let replyObj: any = undefined;
+                if (text.startsWith('{"type":"REPLY"') || text.startsWith('{"replyTo"')) {
+                  try {
+                    const parsed = JSON.parse(text);
+                    replyObj = parsed.replyTo;
+                    text = parsed.text || '';
+                  } catch {}
+                }
+
                 if (text.startsWith('{"type":"MEDIA"') || text.startsWith('{"mediaKey"')) {
                   try {
                     const parsed = JSON.parse(text);
@@ -794,22 +923,36 @@ export default function AppHome() {
                 }).catch(() => {});
               }
 
+              const reactionMap = new Map<
+                string,
+                { emoji: string; count: number; hasReacted: boolean }
+              >();
+              (m.reactions || []).forEach((r: any) => {
+                const cur = reactionMap.get(r.emoji) || {
+                  emoji: r.emoji,
+                  count: 0,
+                  hasReacted: false,
+                };
+                cur.count += 1;
+                if (r.userId === currentUser?.id) {
+                  cur.hasReacted = true;
+                }
+                reactionMap.set(r.emoji, cur);
+              });
+              const reactions = Array.from(reactionMap.values());
+
               return {
                 id: m.id,
                 senderName: m.senderDevice?.user?.fullName || 'User',
                 content: text,
+                replyTo: replyObj,
                 timestamp: new Date(m.createdAt).getTime(),
                 isSentByMe: isMe,
                 status,
                 isEncrypted: true,
                 isDeletedForEveryone: m.isDeletedForEveryone,
                 attachment: attachmentObj,
-                reactions:
-                  m.reactions?.map((r: any) => ({
-                    emoji: r.emoji,
-                    count: 1,
-                    hasReacted: r.userId === currentUser?.id,
-                  })) || [],
+                reactions,
               };
             })
           );
@@ -831,19 +974,28 @@ export default function AppHome() {
 
   const displayConversations = conversations.map((conv) => {
     const isOnline = conv.peerUserId ? onlineUserIds.has(conv.peerUserId) : false;
+    const isTyping = Boolean(typingUsers[conv.id]);
+    const lastSeen = conv.peerUserId ? (lastSeenMap[conv.peerUserId] || conv.lastSeenAt) : conv.lastSeenAt;
     return {
       ...conv,
       status: (isOnline ? 'online' : 'offline') as 'online' | 'offline',
+      isTyping,
+      lastSeenAt: lastSeen,
     };
   });
 
   const rawActiveContact = conversations.find((c) => c.id === activeId);
+  const activePeerId = rawActiveContact?.peerUserId;
+  const isDirectPeerOnline = activePeerId ? onlineUserIds.has(activePeerId) : false;
+  const activeContactLastSeen = activePeerId ? (lastSeenMap[activePeerId] || rawActiveContact?.lastSeenAt) : rawActiveContact?.lastSeenAt;
+  const isActiveTyping = Boolean(typingUsers[activeId]);
+
   const activeContact = rawActiveContact
     ? {
         ...rawActiveContact,
-        status: (rawActiveContact.peerUserId && onlineUserIds.has(rawActiveContact.peerUserId)
-          ? 'online'
-          : 'offline') as 'online' | 'offline',
+        status: (isDirectPeerOnline ? 'online' : 'offline') as 'online' | 'offline',
+        isTyping: isActiveTyping,
+        lastSeenAt: activeContactLastSeen,
       }
     : undefined;
 
@@ -935,23 +1087,40 @@ export default function AppHome() {
   };
 
   // Dispatch authenticated AES-256-GCM encrypted message
-  const handleSendMessage = async (text: string) => {
+  const handleSendMessage = async (text: string, replyTo?: ReplyContext) => {
     if (!text.trim() || !activeId) return;
+
+    realtimeSocket.stopTyping(activeId);
 
     const tempId = `m-${Date.now()}`;
     const optimisticMsg: MessageProps = {
       id: tempId,
       content: text,
+      replyTo: replyTo || undefined,
       timestamp: Date.now(),
       isSentByMe: true,
       status: 'sending',
       isEncrypted: true,
+      reactions: [],
     };
     setMessages((prev) => [...prev, optimisticMsg]);
+    setReplyTarget(null);
 
     try {
       const key = await getConversationKey(activeId);
-      const { ciphertext, iv, authTag } = await encryptAESGCM(key, text);
+      const payloadString = replyTo
+        ? JSON.stringify({
+            type: 'REPLY',
+            replyTo: {
+              id: replyTo.id,
+              senderName: replyTo.senderName,
+              content: replyTo.content,
+            },
+            text,
+          })
+        : text;
+
+      const { ciphertext, iv, authTag } = await encryptAESGCM(key, payloadString);
 
       const res = await fetch(`/api/conversations/${activeId}/messages`, {
         method: 'POST',
@@ -991,6 +1160,71 @@ export default function AppHome() {
       }
     } catch (err) {
       console.error('Failed to send encrypted message:', err);
+    }
+  };
+
+  // Toggle emoji reaction on message
+  const handleToggleReaction = async (messageId: string, emoji: string) => {
+    const msg = messages.find((m) => m.id === messageId);
+    const existing = msg?.reactions?.find((r) => r.emoji === emoji);
+    const hasReacted = existing?.hasReacted || false;
+
+    // Optimistic local update
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== messageId) return m;
+        const currentReactions = m.reactions || [];
+        const match = currentReactions.find((r) => r.emoji === emoji);
+        let updated = [...currentReactions];
+        if (hasReacted) {
+          if (match && match.count <= 1) {
+            updated = updated.filter((r) => r.emoji !== emoji);
+          } else if (match) {
+            updated = updated.map((r) =>
+              r.emoji === emoji ? { ...r, count: r.count - 1, hasReacted: false } : r
+            );
+          }
+        } else {
+          if (match) {
+            updated = updated.map((r) =>
+              r.emoji === emoji ? { ...r, count: r.count + 1, hasReacted: true } : r
+            );
+          } else {
+            updated.push({ emoji, count: 1, hasReacted: true });
+          }
+        }
+        return { ...m, reactions: updated };
+      })
+    );
+
+    try {
+      if (hasReacted) {
+        await fetch(`/api/messages/${messageId}/reactions`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ emoji }),
+        });
+      } else {
+        await fetch(`/api/messages/${messageId}/reactions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ emoji }),
+        });
+      }
+    } catch (err) {
+      console.error('Failed to toggle emoji reaction:', err);
+    }
+  };
+
+  // Smooth scroll and pulse highlight to original quoted message
+  const handleScrollToMessage = (messageId: string) => {
+    const element = document.getElementById(`msg-${messageId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      element.classList.add('animate-pulse');
+      setTimeout(() => {
+        element.classList.remove('animate-pulse');
+      }, 1500);
     }
   };
 
@@ -1628,6 +1862,10 @@ export default function AppHome() {
           onLogout={handleLogout}
           currentUserName={currentUser.fullName || currentUser.email}
           currentUserEmail={currentUser.email}
+          currentUserAvatar={currentUser.avatarUrl}
+          onUpdateAvatar={(newAvatar) => {
+            setCurrentUser((prev: any) => (prev ? { ...prev, avatarUrl: newAvatar } : null));
+          }}
           isAdmin={Boolean(currentUser?.roles?.includes('ADMIN') || currentUser?.role === 'ADMIN')}
         />
       </div>
@@ -1680,6 +1918,8 @@ export default function AppHome() {
               contactName={activeContact.name}
               avatarSrc={activeContact.avatarSrc}
               status={activeContact.status}
+              isTyping={activeContact.isTyping}
+              lastSeenAt={activeContact.lastSeenAt}
               onBack={() => setActiveId('')}
               onVoiceCall={() => startCall('voice')}
               onVideoCall={() => startCall('video')}
@@ -1724,9 +1964,33 @@ export default function AppHome() {
                         {...m}
                         onDelete={handleDeleteMessage}
                         onDownloadAttachment={handleDownloadAttachment}
+                        onReply={(msg) =>
+                          setReplyTarget({
+                            id: msg.id,
+                            senderName: msg.senderName || 'User',
+                            content: msg.content,
+                          })
+                        }
+                        onReact={handleToggleReaction}
+                        onScrollToMessage={handleScrollToMessage}
                       />
                     ))}
                   </>
+                )}
+                {/* Real-time WhatsApp Typing Indicator Bubble */}
+                {typingUsers[activeId] && (
+                  <div className="w-full flex my-1 select-none justify-start animate-fade-in">
+                    <div className="bg-[#202c33] border border-[#2a3942]/60 text-white rounded-2xl rounded-tl-sm px-3.5 py-2.5 shadow-sm flex items-center gap-2 max-w-[200px]">
+                      <div className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-[#00a884] animate-bounce [animation-delay:-0.3s]" />
+                        <span className="w-2 h-2 rounded-full bg-[#00a884] animate-bounce [animation-delay:-0.15s]" />
+                        <span className="w-2 h-2 rounded-full bg-[#00a884] animate-bounce" />
+                      </div>
+                      <span className="text-xs text-[#8696a0] font-medium truncate">
+                        {typingUsers[activeId].displayName || 'typing'}...
+                      </span>
+                    </div>
+                  </div>
                 )}
                 <div ref={messagesEndRef} />
               </div>
@@ -1749,6 +2013,13 @@ export default function AppHome() {
             <ChatInput
               onSendMessage={handleSendMessage}
               onSendFile={handleSendFile}
+              replyTo={replyTarget}
+              onCancelReply={() => setReplyTarget(null)}
+              onTyping={() => {
+                if (activeId) {
+                  realtimeSocket.emitTyping(activeId);
+                }
+              }}
               onSendVoiceNote={() =>
                 toast({
                   type: 'info',
@@ -1916,9 +2187,12 @@ export default function AppHome() {
       >
         <div className="flex flex-col gap-5 text-sm">
           <div className="flex flex-col items-center p-4 rounded-xl bg-gcs-card border border-gcs-border">
-            <div className="h-16 w-16 rounded-full bg-gcs-emerald/20 border-2 border-gcs-emerald flex items-center justify-center text-xl font-bold text-gcs-mint mb-2">
-              GC
-            </div>
+            <Avatar
+              src={activeContact ? activeContact.avatarSrc : currentUser.avatarUrl}
+              name={activeContact ? activeContact.name : currentUser.fullName || currentUser.email}
+              size="xl"
+              className="mb-2"
+            />
             <span className="font-semibold text-gcs-text">
               {activeContact ? activeContact.name : currentUser.fullName || currentUser.email}
             </span>

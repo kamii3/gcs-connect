@@ -23,7 +23,7 @@ model User {
   passwordHash       String    @map("password_hash")
   fullName           String    @map("full_name")
   displayName        String?   @map("display_name")
-  avatarUrl          String?   @map("avatar_url")
+  avatarUrl          String?   @map("avatar_url") @db.MediumText
   status             String    @default("ACTIVE") // ACTIVE, SUSPENDED, PENDING_ACTIVATION, DELETED
   isTwoFactorEnabled Boolean   @default(false) @map("is_two_factor_enabled")
   twoFactorSecret    String?   @map("two_factor_secret")
@@ -214,7 +214,7 @@ model Conversation {
   id                          String    @id @default(uuid())
   type                        String    @default("DIRECT") // DIRECT, GROUP
   title                       String?
-  avatarUrl                   String?   @map("avatar_url")
+  avatarUrl                   String?   @map("avatar_url") @db.MediumText
   createdByUserId             String?   @map("created_by_user_id")
   isEncrypted                 Boolean   @default(true) @map("is_encrypted")
   disappearingDurationSeconds Int?      @map("disappearing_duration_seconds")

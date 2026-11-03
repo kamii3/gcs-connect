@@ -198,4 +198,53 @@ router.get('/directory', authenticate, async (req: Request, res: Response) => {
   }
 });
 
+const updateProfileSchema = z.object({
+  avatarUrl: z.string().nullable().optional(),
+  displayName: z.string().max(100).optional(),
+  fullName: z.string().max(100).optional(),
+});
+
+/**
+ * PATCH /api/users/profile
+ * Update authenticated user's profile details (avatarUrl, displayName, fullName)
+ */
+router.patch('/profile', authenticate, async (req: Request, res: Response) => {
+  try {
+    const callerId = req.user!.id;
+    const parsed = updateProfileSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'VALIDATION_ERROR', details: parsed.error.format() });
+      return;
+    }
+
+    const { avatarUrl, displayName, fullName } = parsed.data;
+
+    const dataToUpdate: any = {};
+    if (avatarUrl !== undefined) dataToUpdate.avatarUrl = avatarUrl;
+    if (displayName !== undefined) dataToUpdate.displayName = displayName.trim();
+    if (fullName !== undefined) dataToUpdate.fullName = fullName.trim();
+
+    const updatedUser = await prisma.user.update({
+      where: { id: callerId },
+      data: dataToUpdate,
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        displayName: true,
+        avatarUrl: true,
+        status: true,
+      },
+    });
+
+    res.json({
+      success: true,
+      user: updatedUser,
+    });
+  } catch (error: any) {
+    console.error('[UpdateProfileError]', error);
+    res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: error.message });
+  }
+});
+
 export default router;

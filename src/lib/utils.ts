@@ -40,6 +40,49 @@ export function formatChatTime(dateInput: Date | number | string): string {
 }
 
 /**
+ * Formats a UNIX timestamp or Date to authentic WhatsApp "last seen" status
+ */
+export function formatLastSeen(dateInput?: Date | number | string | null): string {
+  if (!dateInput) return 'last seen recently';
+  const date = new Date(dateInput);
+  if (isNaN(date.getTime())) return 'last seen recently';
+
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+
+  if (diffSec < 60) {
+    return 'last seen just now';
+  }
+
+  const isToday =
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    date.getDate() === yesterday.getDate() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getFullYear() === yesterday.getFullYear();
+
+  const timeStr = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+
+  if (isToday) {
+    return `last seen today at ${timeStr}`;
+  }
+  if (isYesterday) {
+    return `last seen yesterday at ${timeStr}`;
+  }
+
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `last seen ${day}/${month}/${year} at ${timeStr}`;
+}
+
+/**
  * Formats byte size to human readable string (e.g. 2.4 MB)
  */
 export function formatBytes(bytes: number, decimals = 1): string {

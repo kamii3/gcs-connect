@@ -15,14 +15,25 @@ import {
   Trash2,
   Radio,
   Camera,
+  Reply,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+export interface ReplyContext {
+  id: string;
+  senderName: string;
+  content: string;
+}
+
 export interface ChatInputProps {
-  onSendMessage: (content: string) => void;
+  onSendMessage: (content: string, replyTo?: ReplyContext) => void;
   onSendVoiceNote?: () => void;
   onAttachFile?: (type: 'image' | 'video' | 'document' | 'audio') => void;
   onSendFile?: (file: File) => void;
+  onTyping?: () => void;
+  replyTo?: ReplyContext | null;
+  onCancelReply?: () => void;
   isSending?: boolean;
   disabled?: boolean;
   placeholder?: string;
@@ -32,6 +43,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onSendMessage,
   onAttachFile,
   onSendFile,
+  onTyping,
+  replyTo,
+  onCancelReply,
   isSending = false,
   disabled = false,
   placeholder = 'Type a message',
@@ -82,10 +96,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
+  useEffect(() => {
+    if (replyTo) {
+      inputRef.current?.focus();
+    }
+  }, [replyTo]);
+
   const handleSend = () => {
     if (!text.trim() || isSending || disabled) return;
-    onSendMessage(text.trim());
+    onSendMessage(text.trim(), replyTo || undefined);
     setText('');
+    onCancelReply?.();
     if (inputRef.current) {
       inputRef.current.style.height = 'auto';
     }
@@ -102,6 +123,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     setText(e.target.value);
     e.target.style.height = 'auto';
     e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+    onTyping?.();
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -281,6 +303,29 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               <Music className="w-5 h-5" />
             </div>
             <span className="text-[11px] text-[#8696a0] group-hover:text-white">Audio</span>
+          </button>
+        </div>
+      )}
+
+      {/* WhatsApp Quoted Reply Preview Bar */}
+      {replyTo && (
+        <div className="max-w-5xl mx-auto mb-1.5 p-2 px-3.5 bg-[#1f2c34] border-l-4 border-[#00a884] rounded-r-2xl flex items-center justify-between gap-3 shadow-xl backdrop-blur-xl animate-slide-up">
+          <div className="flex flex-col min-w-0">
+            <span className="text-xs font-bold text-[#00a884] flex items-center gap-1.5">
+              <Reply className="w-3.5 h-3.5" />
+              <span>Replying to {replyTo.senderName}</span>
+            </span>
+            <span className="text-xs text-[#d1d7db] truncate mt-0.5">
+              {replyTo.content || 'Encrypted Attachment'}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onCancelReply}
+            className="p-1 text-[#8696a0] hover:text-white rounded-full hover:bg-white/10 transition-colors"
+            title="Cancel reply"
+          >
+            <X className="w-4 h-4" />
           </button>
         </div>
       )}

@@ -296,6 +296,14 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
                     email: true,
                     avatarUrl: true,
                     status: true,
+                    devices: {
+                      where: { isActive: true },
+                      orderBy: { lastSeenAt: 'desc' },
+                      take: 1,
+                      select: {
+                        lastSeenAt: true,
+                      },
+                    },
                   },
                 },
               },
@@ -347,10 +355,12 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
         // Determine title for direct conversations
         let displayTitle = conv.title;
         let displayAvatar = conv.avatarUrl;
+        let peerLastSeenAt: Date | null = null;
         if (conv.type === 'DIRECT') {
           const peer = conv.members.find((member) => member.userId !== callerId);
           displayTitle = peer?.user.fullName || 'Direct Chat';
           displayAvatar = peer?.user.avatarUrl || null;
+          peerLastSeenAt = peer?.user.devices?.[0]?.lastSeenAt || null;
         }
 
         const latestMsg = conv.messages[0] || null;
@@ -360,6 +370,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
           type: conv.type,
           title: displayTitle,
           avatarUrl: displayAvatar,
+          lastSeenAt: peerLastSeenAt,
           isEncrypted: conv.isEncrypted,
           disappearingDurationSeconds: conv.disappearingDurationSeconds,
           isPinned: m.isPinned,
@@ -374,6 +385,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
             fullName: member.user.fullName,
             displayName: member.user.displayName,
             avatarUrl: member.user.avatarUrl,
+            lastSeenAt: member.user.devices?.[0]?.lastSeenAt || null,
           })),
           latestMessage: latestMsg
             ? {

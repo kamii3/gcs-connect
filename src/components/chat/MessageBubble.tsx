@@ -20,6 +20,8 @@ import {
   FileArchive,
   FileCode,
   FileSpreadsheet,
+  Reply,
+  Smile,
 } from 'lucide-react';
 
 export interface MessageAttachment {
@@ -42,6 +44,7 @@ export interface MessageProps {
   isDeletedForEveryone?: boolean;
   attachment?: MessageAttachment;
   replyTo?: {
+    id?: string;
     senderName: string;
     content: string;
   };
@@ -52,6 +55,9 @@ export interface MessageProps {
   }>;
   onDelete?: (id: string, deleteForEveryone: boolean) => void;
   onDownloadAttachment?: (attachment: MessageAttachment) => void;
+  onReply?: (message: MessageProps) => void;
+  onReact?: (messageId: string, emoji: string) => void;
+  onScrollToMessage?: (messageId: string) => void;
 }
 
 // URL extraction regex
@@ -59,6 +65,7 @@ const URL_REGEX = /(https?:\/\/[^\s]+)/g;
 
 export const MessageBubble: React.FC<MessageProps> = ({
   id,
+  senderName = 'User',
   content,
   timestamp,
   isSentByMe,
@@ -70,6 +77,9 @@ export const MessageBubble: React.FC<MessageProps> = ({
   reactions = [],
   onDelete,
   onDownloadAttachment,
+  onReply,
+  onReact,
+  onScrollToMessage,
 }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [showActions, setShowActions] = useState(false);
@@ -160,9 +170,11 @@ export const MessageBubble: React.FC<MessageProps> = ({
 
   return (
     <div
+      id={`msg-${id}`}
       ref={bubbleContainerRef}
       className={cn(
         'w-full flex my-1 select-text transition-all duration-150',
+        reactions && reactions.length > 0 ? 'mb-4' : 'mb-1',
         isSentByMe ? 'justify-end' : 'justify-start'
       )}
     >
@@ -181,6 +193,48 @@ export const MessageBubble: React.FC<MessageProps> = ({
             )}
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Quick Reactions Bar: 👍 ❤️ 😂 😮 😢 🙏 */}
+            <div className="flex items-center gap-0.5 border-r border-[#374248] pr-1.5 mr-0.5">
+              {['👍', '❤️', '😂', '😮', '😢', '🙏'].map((em) => (
+                <button
+                  key={em}
+                  type="button"
+                  onClick={() => {
+                    onReact?.(id, em);
+                    setShowActions(false);
+                  }}
+                  className="w-7 h-7 hover:bg-white/10 rounded-full flex items-center justify-center text-sm active:scale-125 transition-transform"
+                  title={`React with ${em}`}
+                >
+                  {em}
+                </button>
+              ))}
+            </div>
+
+            {/* Reply Button */}
+            {onReply && !isDeletedForEveryone && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowActions(false);
+                  onReply({
+                    id,
+                    senderName,
+                    content,
+                    timestamp,
+                    isSentByMe,
+                    attachment,
+                    replyTo,
+                  });
+                }}
+                className="p-1 hover:text-white text-[#8696a0] rounded transition-colors active:scale-90"
+                title="Reply"
+              >
+                <Reply className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {/* Copy Button */}
             <button
               type="button"
               onClick={handleCopy}
@@ -263,12 +317,21 @@ export const MessageBubble: React.FC<MessageProps> = ({
         >
           {/* Reply Context */}
           {replyTo && !isDeletedForEveryone && (
-            <div className="mb-1.5 p-2 rounded-lg bg-black/25 border-l-3 border-[#00a884] text-xs">
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                if (replyTo.id && onScrollToMessage) {
+                  onScrollToMessage(replyTo.id);
+                }
+              }}
+              className="mb-1.5 p-2 rounded-lg bg-black/25 border-l-4 border-[#00a884] text-xs cursor-pointer hover:bg-black/35 transition-colors"
+              title={replyTo.id ? 'Jump to original message' : undefined}
+            >
               <span className="font-semibold text-[#00a884] block leading-tight">
                 {replyTo.senderName}
               </span>
               <span className="text-[#d1d7db] truncate block mt-0.5">
-                {replyTo.content}
+                {replyTo.content || 'Encrypted Attachment'}
               </span>
             </div>
           )}
@@ -355,6 +418,39 @@ export const MessageBubble: React.FC<MessageProps> = ({
               </span>
             )}
           </div>
+
+          {/* Reactions Floating Badge Pill */}
+          {reactions && reactions.length > 0 && (
+            <div
+              className={cn(
+                'absolute -bottom-2.5 flex items-center gap-1 z-20 select-none',
+                isSentByMe ? 'right-2' : 'left-2'
+              )}
+            >
+              <div className="flex items-center gap-1 bg-[#1f2c34] border border-[#2a3942] rounded-full px-1.5 py-0.5 shadow-md backdrop-blur-md">
+                {reactions.map((r) => (
+                  <button
+                    key={r.emoji}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReact?.(id, r.emoji);
+                    }}
+                    className={cn(
+                      'flex items-center gap-0.5 px-1 py-0.2 rounded-full transition-all active:scale-90',
+                      r.hasReacted ? 'bg-[#005c4b] text-white font-bold' : 'hover:bg-white/10'
+                    )}
+                    title={r.hasReacted ? 'You reacted (click to remove)' : `${r.count} reacted`}
+                  >
+                    <span className="text-xs leading-none">{r.emoji}</span>
+                    {r.count > 1 && (
+                      <span className="text-[10px] text-[#8696a0] leading-none">{r.count}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

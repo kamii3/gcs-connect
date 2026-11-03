@@ -240,6 +240,7 @@ async function authenticate(req, res, next2) {
     email: dbSession.user.email,
     fullName: dbSession.user.fullName,
     displayName: dbSession.user.displayName,
+    avatarUrl: dbSession.user.avatarUrl,
     status: dbSession.user.status,
     roles: dbSession.user.roles.map((r) => r.role)
   };
@@ -2298,7 +2299,15 @@ router4.get("/", authenticate, async (req, res) => {
                     displayName: true,
                     email: true,
                     avatarUrl: true,
-                    status: true
+                    status: true,
+                    devices: {
+                      where: { isActive: true },
+                      orderBy: { lastSeenAt: "desc" },
+                      take: 1,
+                      select: {
+                        lastSeenAt: true
+                      }
+                    }
                   }
                 }
               }
@@ -2344,10 +2353,12 @@ router4.get("/", authenticate, async (req, res) => {
         });
         let displayTitle = conv.title;
         let displayAvatar = conv.avatarUrl;
+        let peerLastSeenAt = null;
         if (conv.type === "DIRECT") {
           const peer = conv.members.find((member) => member.userId !== callerId);
           displayTitle = peer?.user.fullName || "Direct Chat";
           displayAvatar = peer?.user.avatarUrl || null;
+          peerLastSeenAt = peer?.user.devices?.[0]?.lastSeenAt || null;
         }
         const latestMsg = conv.messages[0] || null;
         return {
@@ -2355,6 +2366,7 @@ router4.get("/", authenticate, async (req, res) => {
           type: conv.type,
           title: displayTitle,
           avatarUrl: displayAvatar,
+          lastSeenAt: peerLastSeenAt,
           isEncrypted: conv.isEncrypted,
           disappearingDurationSeconds: conv.disappearingDurationSeconds,
           isPinned: m.isPinned,
@@ -2368,7 +2380,8 @@ router4.get("/", authenticate, async (req, res) => {
             role: member.role,
             fullName: member.user.fullName,
             displayName: member.user.displayName,
-            avatarUrl: member.user.avatarUrl
+            avatarUrl: member.user.avatarUrl,
+            lastSeenAt: member.user.devices?.[0]?.lastSeenAt || null
           })),
           latestMessage: latestMsg ? {
             id: latestMsg.id,
@@ -3298,6 +3311,45 @@ router6.get("/directory", authenticate, async (req, res) => {
     });
   } catch (error) {
     console.error("[UserDirectoryError]", error);
+    res.status(500).json({ error: "INTERNAL_SERVER_ERROR", message: error.message });
+  }
+});
+var updateProfileSchema = import_zod6.z.object({
+  avatarUrl: import_zod6.z.string().nullable().optional(),
+  displayName: import_zod6.z.string().max(100).optional(),
+  fullName: import_zod6.z.string().max(100).optional()
+});
+router6.patch("/profile", authenticate, async (req, res) => {
+  try {
+    const callerId = req.user.id;
+    const parsed = updateProfileSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "VALIDATION_ERROR", details: parsed.error.format() });
+      return;
+    }
+    const { avatarUrl, displayName, fullName } = parsed.data;
+    const dataToUpdate = {};
+    if (avatarUrl !== void 0) dataToUpdate.avatarUrl = avatarUrl;
+    if (displayName !== void 0) dataToUpdate.displayName = displayName.trim();
+    if (fullName !== void 0) dataToUpdate.fullName = fullName.trim();
+    const updatedUser = await db_default.user.update({
+      where: { id: callerId },
+      data: dataToUpdate,
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        displayName: true,
+        avatarUrl: true,
+        status: true
+      }
+    });
+    res.json({
+      success: true,
+      user: updatedUser
+    });
+  } catch (error) {
+    console.error("[UpdateProfileError]", error);
     res.status(500).json({ error: "INTERNAL_SERVER_ERROR", message: error.message });
   }
 });

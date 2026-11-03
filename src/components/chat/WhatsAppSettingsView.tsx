@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
@@ -23,11 +23,16 @@ import {
   Check,
   Eye,
   Trash2,
+  Camera,
+  Upload,
+  Loader2,
 } from 'lucide-react';
 
 export interface WhatsAppSettingsViewProps {
   currentUserName: string;
   currentUserEmail: string;
+  currentUserAvatar?: string | null;
+  onUpdateAvatar?: (url: string) => void;
   onLogout: () => void;
   onOpenInstallModal: () => void;
   onClearAllChats?: () => void;
@@ -37,12 +42,103 @@ export interface WhatsAppSettingsViewProps {
 export const WhatsAppSettingsView: React.FC<WhatsAppSettingsViewProps> = ({
   currentUserName,
   currentUserEmail,
+  currentUserAvatar,
+  onUpdateAvatar,
   onLogout,
   onOpenInstallModal,
   onClearAllChats,
   isAdmin = false,
 }) => {
   const [aboutText, setAboutText] = useState('Connect Freely. Communicate Securely. 🔐');
+  const [avatarUrl, setAvatarUrl] = useState<string | null | undefined>(currentUserAvatar);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setAvatarUrl(currentUserAvatar);
+  }, [currentUserAvatar]);
+
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file (JPG, PNG, WebP).');
+      return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      alert('File size exceeds 8MB limit.');
+      return;
+    }
+
+    setIsUploadingAvatar(true);
+
+    try {
+      // Compress and resize client-side to 256x256 square WebP/JPEG for fast load and optimal storage
+      const reader = new FileReader();
+      reader.onload = (readerEvent) => {
+        const img = new (window as any).Image();
+        img.onload = async () => {
+          const canvas = document.createElement('canvas');
+          const size = 256;
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            const minDim = Math.min(img.width, img.height);
+            const sx = (img.width - minDim) / 2;
+            const sy = (img.height - minDim) / 2;
+            ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+
+            const res = await fetch('/api/users/profile', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ avatarUrl: compressedDataUrl }),
+            });
+
+            if (res.ok) {
+              setAvatarUrl(compressedDataUrl);
+              onUpdateAvatar?.(compressedDataUrl);
+            } else {
+              alert('Failed to update profile picture. Please try again.');
+            }
+          }
+          setIsUploadingAvatar(false);
+        };
+        img.onerror = () => {
+          setIsUploadingAvatar(false);
+          alert('Could not process selected image.');
+        };
+        img.src = readerEvent.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setIsUploadingAvatar(false);
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    setIsUploadingAvatar(true);
+    try {
+      const res = await fetch('/api/users/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatarUrl: null }),
+      });
+      if (res.ok) {
+        setAvatarUrl(null);
+        onUpdateAvatar?.('');
+      }
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
   const [isEditAboutModal, setIsEditAboutModal] = useState(false);
   const [newAboutInput, setNewAboutInput] = useState(aboutText);
   const [isSecurityModal, setIsSecurityModal] = useState(false);
@@ -76,16 +172,45 @@ export const WhatsAppSettingsView: React.FC<WhatsAppSettingsViewProps> = ({
 
   return (
     <div className="flex-1 overflow-y-auto flex flex-col divide-y divide-gcs-border/20 select-none pb-20 md:pb-6">
+      {/* Hidden file input for uploading profile picture */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        onChange={handleAvatarFileChange}
+        className="hidden"
+      />
+
       {/* Profile Card */}
-      <div
-        onClick={() => {
-          setNewAboutInput(aboutText);
-          setIsEditAboutModal(true);
-        }}
-        className="p-4 hover:bg-gcs-card/40 transition-colors flex items-center justify-between cursor-pointer"
-      >
-        <div className="flex items-center gap-3.5 min-w-0 flex-1">
-          <Avatar name={currentUserName} size="lg" status="online" />
+      <div className="p-4 hover:bg-gcs-card/40 transition-colors flex items-center justify-between">
+        <div
+          onClick={() => {
+            setNewAboutInput(aboutText);
+            setIsEditAboutModal(true);
+          }}
+          className="flex items-center gap-3.5 min-w-0 flex-1 cursor-pointer"
+        >
+          {/* Avatar with Camera badge */}
+          <div className="relative group shrink-0">
+            <Avatar src={avatarUrl || currentUserAvatar} name={currentUserName} size="lg" status="online" />
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                fileInputRef.current?.click();
+              }}
+              disabled={isUploadingAvatar}
+              className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-[#00a884] hover:bg-[#029070] text-white flex items-center justify-center shadow-md active:scale-90 transition-transform"
+              title="Change Profile Picture"
+            >
+              {isUploadingAvatar ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Camera className="w-3.5 h-3.5" />
+              )}
+            </button>
+          </div>
+
           <div className="flex flex-col min-w-0 flex-1">
             <span className="text-base font-bold text-gcs-text truncate leading-tight">
               {currentUserName}
@@ -99,7 +224,7 @@ export const WhatsAppSettingsView: React.FC<WhatsAppSettingsViewProps> = ({
           </div>
         </div>
 
-        <div className="p-2 rounded-xl text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card transition-colors">
+        <div className="p-2 rounded-xl text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card transition-colors shrink-0">
           <QrCode className="w-5 h-5 text-gcs-emerald" />
         </div>
       </div>
@@ -278,21 +403,87 @@ export const WhatsAppSettingsView: React.FC<WhatsAppSettingsViewProps> = ({
         </div>
       </div>
 
-      {/* Edit About Modal */}
+      {/* Edit Profile & Avatar Modal */}
       <Modal
         isOpen={isEditAboutModal}
         onClose={() => setIsEditAboutModal(false)}
-        title="Edit About & Status"
-        description="Your about text is visible to other verified colleagues in the GCS directory."
+        title="Profile & Picture"
+        description="Manage your profile photo, display name, and about status."
       >
         <div className="flex flex-col gap-4 text-sm mt-1">
-          <input
-            type="text"
-            value={newAboutInput}
-            onChange={(e) => setNewAboutInput(e.target.value)}
-            maxLength={100}
-            className="w-full p-3 bg-gcs-card text-gcs-text border border-gcs-border rounded-xl text-sm focus:outline-none focus:border-gcs-emerald"
-          />
+          {/* Centered Avatar with Camera button */}
+          <div className="flex flex-col items-center justify-center py-2 gap-2.5">
+            <div className="relative group">
+              <Avatar
+                src={avatarUrl || currentUserAvatar}
+                name={currentUserName}
+                size="xl"
+                className="w-24 h-24 text-2xl border-2 border-[#00a884]"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingAvatar}
+                className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-[#00a884] hover:bg-[#029070] text-white flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+                title="Upload Photo"
+              >
+                {isUploadingAvatar ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Camera className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingAvatar}
+                className="text-xs h-8 flex items-center gap-1.5"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Upload Photo</span>
+              </Button>
+
+              {(avatarUrl || currentUserAvatar) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleRemoveAvatar}
+                  disabled={isUploadingAvatar}
+                  className="text-xs h-8 text-red-400 hover:text-red-300 hover:bg-red-500/10 flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Remove</span>
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gcs-muted block mb-1.5">
+              Your Name
+            </label>
+            <div className="p-3 bg-gcs-card/60 text-white border border-gcs-border rounded-xl text-sm font-medium">
+              {currentUserName}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gcs-muted block mb-1.5">
+              About & Status
+            </label>
+            <input
+              type="text"
+              value={newAboutInput}
+              onChange={(e) => setNewAboutInput(e.target.value)}
+              maxLength={100}
+              className="w-full p-3 bg-gcs-card text-gcs-text border border-gcs-border rounded-xl text-sm focus:outline-none focus:border-gcs-emerald"
+            />
+          </div>
+
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" size="sm" onClick={() => setIsEditAboutModal(false)}>
               Cancel

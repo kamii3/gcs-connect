@@ -11,6 +11,7 @@ export interface AuthenticatedUser {
   email: string;
   fullName: string;
   displayName: string | null;
+  avatarUrl?: string | null;
   status: string;
   roles: string[];
 }
@@ -117,6 +118,7 @@ export async function authenticate(
     email: dbSession.user.email,
     fullName: dbSession.user.fullName,
     displayName: dbSession.user.displayName,
+    avatarUrl: dbSession.user.avatarUrl,
     status: dbSession.user.status,
     roles: dbSession.user.roles.map((r) => r.role),
   };

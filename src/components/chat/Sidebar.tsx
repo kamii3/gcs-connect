@@ -45,6 +45,8 @@ export interface ConversationItem {
   isMuted?: boolean;
   isGroup?: boolean;
   peerUserId?: string;
+  isTyping?: boolean;
+  lastSeenAt?: Date | number | string | null;
 }
 
 export interface SidebarProps {
@@ -59,6 +61,8 @@ export interface SidebarProps {
   onLogout?: () => void;
   currentUserName: string;
   currentUserEmail: string;
+  currentUserAvatar?: string | null;
+  onUpdateAvatar?: (url: string) => void;
   isAdmin?: boolean;
 }
 
@@ -74,6 +78,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
   currentUserName,
   currentUserEmail,
+  currentUserAvatar,
+  onUpdateAvatar,
   isAdmin = false,
 }) => {
   const [activeTab, setActiveTab] = useState<'chats' | 'status' | 'calls' | 'settings'>('chats');
@@ -457,16 +463,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                       <div className="flex items-center justify-between gap-1">
                         <div className="flex items-center gap-1 text-xs text-gcs-muted truncate">
-                          {item.lastMessageStatus === 'read' && (
-                            <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb] shrink-0" />
+                          {item.isTyping ? (
+                            <span className="text-[#00a884] font-medium animate-pulse flex items-center gap-1 truncate">
+                              typing...
+                            </span>
+                          ) : (
+                            <>
+                              {item.lastMessageStatus === 'read' && (
+                                <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb] shrink-0" />
+                              )}
+                              {item.lastMessageStatus === 'delivered' && (
+                                <CheckCheck className="w-3.5 h-3.5 text-gcs-muted shrink-0" />
+                              )}
+                              {item.lastMessageStatus === 'sent' && (
+                                <Check className="w-3.5 h-3.5 text-gcs-muted shrink-0" />
+                              )}
+                              <span className="truncate">{item.lastMessage || 'End-to-end encrypted'}</span>
+                            </>
                           )}
-                          {item.lastMessageStatus === 'delivered' && (
-                            <CheckCheck className="w-3.5 h-3.5 text-gcs-muted shrink-0" />
-                          )}
-                          {item.lastMessageStatus === 'sent' && (
-                            <Check className="w-3.5 h-3.5 text-gcs-muted shrink-0" />
-                          )}
-                          <span className="truncate">{item.lastMessage || 'End-to-end encrypted'}</span>
                         </div>
 
                         <div className="flex items-center gap-1.5 shrink-0 ml-2">
@@ -544,6 +558,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <WhatsAppSettingsView
           currentUserName={currentUserName}
           currentUserEmail={currentUserEmail}
+          currentUserAvatar={currentUserAvatar}
+          onUpdateAvatar={onUpdateAvatar}
           onLogout={() => onLogout?.()}
           onOpenInstallModal={() => onOpenInstallModal?.()}
           isAdmin={isAdmin}

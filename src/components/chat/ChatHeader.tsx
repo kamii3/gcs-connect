@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
+import { formatLastSeen } from '@/lib/utils';
 import {
   Phone,
   Video,
@@ -23,6 +24,8 @@ export interface ChatHeaderProps {
   avatarSrc?: string | null;
   status: 'online' | 'offline' | 'away';
   statusText?: string;
+  isTyping?: boolean;
+  lastSeenAt?: Date | number | string | null;
   onBack?: () => void;
   onVoiceCall?: () => void;
   onVideoCall?: () => void;
@@ -38,6 +41,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   avatarSrc,
   status,
   statusText,
+  isTyping,
+  lastSeenAt,
   onBack,
   onVoiceCall,
   onVideoCall,
@@ -105,15 +110,17 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               />
             </div>
             <span className="text-[11px] text-[#8696a0] truncate flex items-center gap-1.5">
-              {statusText ? (
-                <span className="text-[#00a884] font-medium animate-pulse">{statusText}</span>
+              {isTyping ? (
+                <span className="text-[#00a884] font-medium animate-pulse">typing...</span>
               ) : status === 'online' ? (
                 <>
                   <span className="h-1.5 w-1.5 rounded-full bg-[#00a884] shrink-0" />
                   <span className="text-[#00a884] font-medium">online</span>
                 </>
               ) : (
-                <span>last seen recently</span>
+                <span className="text-[#8696a0]">
+                  {statusText || (lastSeenAt ? formatLastSeen(lastSeenAt) : 'last seen recently')}
+                </span>
               )}
             </span>
           </div>
