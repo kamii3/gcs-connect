@@ -26,18 +26,28 @@ async function main() {
   const totalBytes = stats.size;
   console.log(`[Deploy] Archive size: ${(totalBytes / (1024 * 1024)).toFixed(2)} MB (${totalBytes} bytes)`);
 
-  console.log('[Deploy] Step 1/3: Fetching upload credentials from Hostinger API...');
-  const credsRes = await axios.post(
-    'https://developers.hostinger.com/api/hosting/v1/files/upload-urls',
-    { username: USERNAME, domain: DOMAIN },
-    {
-      headers: {
-        Authorization: `Bearer ${TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      httpsAgent: new https.Agent({ family: 4 })
+  let credsRes;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      console.log(`[Deploy] Step 1/3: Fetching upload credentials from Hostinger API (attempt ${attempt}/5)...`);
+      credsRes = await axios.post(
+        'https://developers.hostinger.com/api/hosting/v1/files/upload-urls',
+        { username: USERNAME, domain: DOMAIN },
+        {
+          headers: {
+            Authorization: `Bearer ${TOKEN}`,
+            'Content-Type': 'application/json'
+          },
+          httpsAgent: new https.Agent({ family: 4 })
+        }
+      );
+      if (credsRes && credsRes.data && credsRes.data.url) break;
+    } catch (e) {
+      console.log(`[Deploy] Attempt ${attempt} failed: ${JSON.stringify(e.response?.data || e.message)}`);
+      if (attempt === 5) throw e;
+      await new Promise(r => setTimeout(r, 5000));
     }
-  );
+  }
 
   const { url: uploadUrl, auth_key: authToken, rest_auth_key: authRestToken } = credsRes.data;
   console.log(`[Deploy] Upload URL obtained: ${uploadUrl}`);
@@ -54,7 +64,7 @@ async function main() {
     'upload-offset': '0'
   };
 
-  await axios.post(uploadUrlWithFile, '', {
+  const postRes = await axios.post(uploadUrlWithFile, '', {
     headers: preHeaders,
     timeout: 60000,
     httpsAgent: new https.Agent({ family: 4 }),
@@ -62,14 +72,21 @@ async function main() {
   });
   console.log('[Deploy] Pre-upload handshake verified (201 Created).');
 
+  const locationHeader = postRes.headers['location'] || `/${normalizedPath}`;
+  const patchPath = locationHeader.startsWith('/rest/')
+    ? locationHeader
+    : `/rest${locationHeader.startsWith('/') ? '' : '/'}${locationHeader}`;
+  const parsedBase = new URL(cleanUploadUrl);
+  const patchTargetUrl = new URL(patchPath, parsedBase.origin);
+  console.log(`[Deploy] Streaming PATCH target: ${patchTargetUrl.toString()}`);
+
   // Perform streaming PATCH using native https.request
-  const parsedUrl = new URL(uploadUrlWithFile);
   await new Promise((resolve, reject) => {
     const patchReq = https.request({
-      protocol: parsedUrl.protocol,
-      hostname: parsedUrl.hostname,
-      port: parsedUrl.port || 443,
-      path: parsedUrl.pathname + parsedUrl.search,
+      protocol: patchTargetUrl.protocol,
+      hostname: patchTargetUrl.hostname,
+      port: patchTargetUrl.port || 443,
+      path: patchTargetUrl.pathname,
       method: 'PATCH',
       family: 4,
       headers: {
