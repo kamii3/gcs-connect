@@ -804,9 +804,9 @@ export default function AdminDashboardPage() {
             </div>
 
             {/* Metrics KPI Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               {/* Users Metric */}
-              <div className="p-5 rounded-2xl bg-gcs-card border border-gcs-border flex flex-col justify-between hover:border-gcs-emerald/40 transition-colors shadow-lg">
+              <div className="p-3.5 sm:p-5 rounded-2xl bg-gcs-card border border-gcs-border flex flex-col justify-between hover:border-gcs-emerald/40 transition-colors shadow-lg">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold uppercase tracking-wider text-gcs-muted">
                     Total Accounts
@@ -826,7 +826,7 @@ export default function AdminDashboardPage() {
               </div>
 
               {/* Active Devices & Sessions */}
-              <div className="p-5 rounded-2xl bg-gcs-card border border-gcs-border flex flex-col justify-between hover:border-gcs-emerald/40 transition-colors shadow-lg">
+              <div className="p-3.5 sm:p-5 rounded-2xl bg-gcs-card border border-gcs-border flex flex-col justify-between hover:border-gcs-emerald/40 transition-colors shadow-lg">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold uppercase tracking-wider text-gcs-muted">
                     Active Devices
@@ -846,7 +846,7 @@ export default function AdminDashboardPage() {
               </div>
 
               {/* Ciphertext Messages Stored */}
-              <div className="p-5 rounded-2xl bg-gcs-card border border-gcs-border flex flex-col justify-between hover:border-gcs-emerald/40 transition-colors shadow-lg">
+              <div className="p-3.5 sm:p-5 rounded-2xl bg-gcs-card border border-gcs-border flex flex-col justify-between hover:border-gcs-emerald/40 transition-colors shadow-lg">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold uppercase tracking-wider text-gcs-muted">
                     Ciphertext Messages
@@ -866,7 +866,7 @@ export default function AdminDashboardPage() {
               </div>
 
               {/* Encrypted Media & Calling */}
-              <div className="p-5 rounded-2xl bg-gcs-card border border-gcs-border flex flex-col justify-between hover:border-gcs-emerald/40 transition-colors shadow-lg">
+              <div className="p-3.5 sm:p-5 rounded-2xl bg-gcs-card border border-gcs-border flex flex-col justify-between hover:border-gcs-emerald/40 transition-colors shadow-lg">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold uppercase tracking-wider text-gcs-muted">
                     Encrypted Storage
@@ -1037,8 +1037,92 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            {/* Users Table */}
-            <div className="rounded-2xl bg-gcs-card border border-gcs-border overflow-hidden shadow-xl">
+            {/* Mobile Users Cards (< md) */}
+            <div className="block md:hidden space-y-3">
+              {users.map((u) => (
+                <div key={u.id} className="p-4 rounded-2xl bg-gcs-card border border-gcs-border shadow-md space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Avatar name={u.fullName} size="md" />
+                      <div className="min-w-0">
+                        <div className="font-bold text-white text-sm truncate">{u.fullName}</div>
+                        <div className="text-gcs-muted font-mono text-[11px] truncate">{u.email}</div>
+                      </div>
+                    </div>
+                    <Badge
+                      variant={u.status === 'ACTIVE' ? 'emerald' : 'error'}
+                      className="font-mono text-[10px] shrink-0"
+                    >
+                      {u.status}
+                    </Badge>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-gcs-muted pt-1 border-t border-gcs-border/40">
+                    <div className="flex gap-1 flex-wrap">
+                      {u.roles.map((r) => (
+                        <Badge key={r} variant="neutral" className="text-[10px]">
+                          {r}
+                        </Badge>
+                      ))}
+                    </div>
+                    <div className="font-mono text-[11px]">
+                      <span className="text-gcs-mint font-semibold">{u.activeDeviceCount}</span> devices
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-gcs-border/40 flex-wrap">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => viewUserDetails(u.id)}
+                      className="text-[11px] h-8 px-2.5 border-gcs-border text-gcs-text"
+                    >
+                      <KeyRound className="w-3 h-3 mr-1 text-gcs-emerald" />
+                      Crypto
+                    </Button>
+
+                    {u.roles.includes('SUPER_ADMIN') || u.email === 'admin@globalcrestsolutions.com' ? (
+                      <span className="text-[10px] font-mono font-semibold px-2 py-1 rounded bg-gcs-emerald/15 text-gcs-mint border border-gcs-emerald/30">
+                        Protected Root
+                      </span>
+                    ) : (
+                      <>
+                        <Button
+                          variant={u.status === 'ACTIVE' ? 'secondary' : 'primary'}
+                          size="sm"
+                          onClick={() => handleToggleUserStatus(u.id, u.status)}
+                          className={cn(
+                            'text-[11px] h-8 px-2.5',
+                            u.status === 'ACTIVE'
+                              ? 'text-amber-400 hover:bg-amber-500/10'
+                              : 'text-gcs-mint bg-gcs-emerald/20'
+                          )}
+                        >
+                          {u.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handlePermanentDeleteUser(u.id, u.email)}
+                          className="text-[11px] h-8 px-2 text-red-400 hover:bg-red-500/20"
+                          title="Delete User"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {users.length === 0 && (
+                <div className="p-6 text-center text-xs text-gcs-muted bg-gcs-card rounded-2xl border border-gcs-border">
+                  No user accounts matched the filter criteria.
+                </div>
+              )}
+            </div>
+
+            {/* Desktop Users Table (>= md) */}
+            <div className="hidden md:block rounded-2xl bg-gcs-card border border-gcs-border overflow-hidden shadow-xl">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-gcs-sidebar text-gcs-muted uppercase text-[10px] tracking-wider border-b border-gcs-border font-semibold">
@@ -1205,8 +1289,44 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            {/* Audit Logs Table */}
-            <div className="rounded-2xl bg-gcs-card border border-gcs-border overflow-hidden shadow-xl">
+            {/* Mobile Audit Logs Cards (< md) */}
+            <div className="block md:hidden space-y-3">
+              {auditLogs.map((log) => (
+                <div key={log.id} className="p-3.5 rounded-2xl bg-gcs-card border border-gcs-border shadow-md space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <Badge
+                      variant={
+                        log.action.includes('SUSPENDED') || log.action.includes('REVOKE')
+                          ? 'error'
+                          : log.action.includes('CREATED')
+                          ? 'emerald'
+                          : 'neutral'
+                      }
+                      className="text-[10px]"
+                    >
+                      {log.action}
+                    </Badge>
+                    <span className="text-[10px] text-gcs-muted font-mono">
+                      {new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <div className="font-semibold text-white truncate">{log.actorEmail}</div>
+                  <div className="text-[11px] text-gcs-mint break-words">{log.details || 'Security audit event logged.'}</div>
+                  <div className="text-[10px] text-gcs-muted font-mono flex justify-between pt-1 border-t border-gcs-border/40">
+                    <span>{log.entityType}</span>
+                    <span>IP: {log.ipAddress || '127.0.0.1'}</span>
+                  </div>
+                </div>
+              ))}
+              {auditLogs.length === 0 && (
+                <div className="p-6 text-center text-xs text-gcs-muted bg-gcs-card rounded-2xl border border-gcs-border">
+                  No audit log events found.
+                </div>
+              )}
+            </div>
+
+            {/* Desktop Audit Logs Table (>= md) */}
+            <div className="hidden md:block rounded-2xl bg-gcs-card border border-gcs-border overflow-hidden shadow-xl">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs font-mono">
                   <thead className="bg-gcs-sidebar text-gcs-muted uppercase text-[10px] tracking-wider border-b border-gcs-border font-semibold">

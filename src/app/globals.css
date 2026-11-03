@@ -54,15 +54,40 @@ body {
   border: 1px solid rgba(0, 168, 121, 0.2);
 }
 
-/* Distinct GCS Cyber-Obsidian Dynamic Mesh Background */
-.gcs-cyber-bg {
-  background-color: #070c0a;
-  background-image:
-    radial-gradient(circle at 50% 0%, rgba(0, 168, 121, 0.09) 0%, transparent 65%),
-    radial-gradient(circle at 100% 100%, rgba(0, 240, 255, 0.04) 0%, transparent 45%),
-    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
+/* Authentic WhatsApp Clean Dark Mode Chat Background — Zero Doodle / Zero Distraction */
+.gcs-cyber-bg,
+.whatsapp-chat-bg {
+  background-color: #0b141a;
+  background-image: none !important;
+}
+
+/* WhatsApp Message Bubble Corner Tails */
+.bubble-tail-sent {
+  position: relative;
+}
+.bubble-tail-sent::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: -8px;
+  width: 0;
+  height: 0;
+  border-top: 10px solid #005c4b;
+  border-right: 10px solid transparent;
+}
+
+.bubble-tail-received {
+  position: relative;
+}
+.bubble-tail-received::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -8px;
+  width: 0;
+  height: 0;
+  border-top: 10px solid #202c33;
+  border-left: 10px solid transparent;
 }
 
 /* Mobile Safe Area & Touch Enhancements */

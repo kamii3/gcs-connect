@@ -7,14 +7,14 @@ import {
   Smile,
   Mic,
   Send,
-  Image,
+  Image as ImageIcon,
   FileText,
   Music,
   Lock,
   Square,
   Trash2,
   Radio,
-  ExternalLink,
+  Camera,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -34,7 +34,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onSendFile,
   isSending = false,
   disabled = false,
-  placeholder = 'Type an end-to-end encrypted message...',
+  placeholder = 'Type a message',
 }) => {
   const [text, setText] = useState('');
   const [showAttachMenu, setShowAttachMenu] = useState(false);
@@ -142,224 +142,228 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         }
       };
 
-      recorder.start(250);
       mediaRecorderRef.current = recorder;
+      recorder.start(100);
       setIsRecording(true);
       setRecordingSeconds(0);
 
       recordingTimerRef.current = setInterval(() => {
         setRecordingSeconds((prev) => prev + 1);
       }, 1000);
-    } catch (err: any) {
-      console.error('Microphone error:', err);
-      alert('Microphone permission required for voice notes. Please grant permission in your browser.');
+    } catch (err) {
+      console.error('Failed to access microphone:', err);
+      alert('Microphone permission was denied or not available.');
     }
   };
 
-  // Stop Recording and Dispatch Audio File
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-      }
+  const stopRecording = (discard = false) => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
     }
-  };
 
-  // Cancel Recording
-  const cancelRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
+    if (discard) {
       audioChunksRef.current = [];
-      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-      }
     }
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
   };
 
   const formatRecordingTime = (secs: number) => {
     const mins = Math.floor(secs / 60);
     const remaining = secs % 60;
-    return `${mins}:${remaining.toString().padStart(2, '0')}`;
+    return `${mins}:${remaining < 10 ? '0' : ''}${remaining}`;
   };
 
   return (
-    <div className="relative p-2 sm:p-3 bg-gcs-sidebar/95 border-t border-gcs-border/80 flex flex-col gap-1 select-none shrink-0 safe-bottom backdrop-blur-md">
-      {/* Hidden Native File Pickers */}
+    <div className="p-2 sm:p-3 bg-[#202c33] border-t border-gcs-border/40 select-none relative z-20 shrink-0 safe-bottom">
+      {/* Hidden native file pickers */}
       <input
-        type="file"
         ref={imageInputRef}
+        type="file"
         accept="image/*,video/*"
-        onChange={handleFileSelect}
         className="hidden"
+        onChange={handleFileSelect}
       />
       <input
-        type="file"
-        ref={audioInputRef}
-        accept="audio/*,.mp3,.wav,.ogg,.m4a"
-        onChange={handleFileSelect}
-        className="hidden"
-      />
-      <input
-        type="file"
         ref={docInputRef}
-        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.tar,.gz,*/*"
-        onChange={handleFileSelect}
+        type="file"
+        accept=".pdf,.doc,.docx,.txt,.zip,.tar,.gz,.xls,.xlsx"
         className="hidden"
+        onChange={handleFileSelect}
+      />
+      <input
+        ref={audioInputRef}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={handleFileSelect}
       />
 
-      {/* Attachment Menu Popup */}
+      {/* WhatsApp Floating Attachment Drawer Menu */}
       {showAttachMenu && (
         <div
           ref={attachMenuRef}
-          className="absolute bottom-16 sm:bottom-18 left-2 sm:left-4 z-40 bg-gcs-card/95 border border-gcs-border rounded-2xl p-2 shadow-2xl flex flex-col gap-1 animate-slide-up w-56 backdrop-blur-2xl"
+          className="absolute bottom-full mb-3 left-4 bg-[#233138] border border-gcs-border/60 rounded-3xl p-3 shadow-2xl z-50 flex items-center gap-3 backdrop-blur-xl animate-fade-in"
         >
+          {/* Document Button */}
           <button
             type="button"
             onClick={() => {
               setShowAttachMenu(false);
-              onAttachFile?.('image');
-              imageInputRef.current?.click();
-            }}
-            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-gcs-text hover:bg-gcs-emerald/20 hover:text-gcs-mint transition-colors text-left active:scale-98 cursor-pointer"
-          >
-            <div className="h-7 w-7 rounded-lg bg-gcs-emerald/20 text-gcs-emerald flex items-center justify-center shrink-0">
-              <Image className="w-4 h-4" />
-            </div>
-            <span>Photos & Videos</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setShowAttachMenu(false);
-              onAttachFile?.('audio');
-              audioInputRef.current?.click();
-            }}
-            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-gcs-text hover:bg-gcs-emerald/20 hover:text-gcs-mint transition-colors text-left active:scale-98 cursor-pointer"
-          >
-            <div className="h-7 w-7 rounded-lg bg-cyan-500/20 text-[#00F0FF] flex items-center justify-center shrink-0">
-              <Music className="w-4 h-4" />
-            </div>
-            <span>Music & Audio Files</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setShowAttachMenu(false);
-              onAttachFile?.('document');
               docInputRef.current?.click();
             }}
-            className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-gcs-text hover:bg-gcs-emerald/20 hover:text-gcs-mint transition-colors text-left active:scale-98 cursor-pointer"
+            className="flex flex-col items-center gap-1.5 p-2 rounded-2xl hover:bg-[#182229] transition-all group"
           >
-            <div className="h-7 w-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-              <FileText className="w-4 h-4" />
+            <div className="w-11 h-11 rounded-full bg-[#7f66ff] flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform">
+              <FileText className="w-5 h-5" />
             </div>
-            <span>Encrypted Document</span>
+            <span className="text-[11px] text-[#8696a0] group-hover:text-white">Document</span>
+          </button>
+
+          {/* Photos & Videos Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowAttachMenu(false);
+              imageInputRef.current?.click();
+            }}
+            className="flex flex-col items-center gap-1.5 p-2 rounded-2xl hover:bg-[#182229] transition-all group"
+          >
+            <div className="w-11 h-11 rounded-full bg-[#007bfc] flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform">
+              <ImageIcon className="w-5 h-5" />
+            </div>
+            <span className="text-[11px] text-[#8696a0] group-hover:text-white">Gallery</span>
+          </button>
+
+          {/* Camera Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowAttachMenu(false);
+              imageInputRef.current?.click();
+            }}
+            className="flex flex-col items-center gap-1.5 p-2 rounded-2xl hover:bg-[#182229] transition-all group"
+          >
+            <div className="w-11 h-11 rounded-full bg-[#d3396d] flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform">
+              <Camera className="w-5 h-5" />
+            </div>
+            <span className="text-[11px] text-[#8696a0] group-hover:text-white">Camera</span>
+          </button>
+
+          {/* Audio Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowAttachMenu(false);
+              audioInputRef.current?.click();
+            }}
+            className="flex flex-col items-center gap-1.5 p-2 rounded-2xl hover:bg-[#182229] transition-all group"
+          >
+            <div className="w-11 h-11 rounded-full bg-[#e86638] flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform">
+              <Music className="w-5 h-5" />
+            </div>
+            <span className="text-[11px] text-[#8696a0] group-hover:text-white">Audio</span>
           </button>
         </div>
       )}
 
-      {/* Main Input Row or Active Voice Recording Bar */}
-      {isRecording ? (
-        <div className="flex items-center justify-between gap-3 bg-gcs-card border border-red-500/40 rounded-2xl p-2 animate-pulse">
-          <div className="flex items-center gap-2 text-red-400">
-            <Radio className="w-4 h-4 animate-ping" />
-            <span className="text-xs font-bold font-mono tracking-wider">
-              REC {formatRecordingTime(recordingSeconds)}
-            </span>
+      {/* Main WhatsApp Compose Bar */}
+      <div className="flex items-end gap-2 max-w-5xl mx-auto">
+        {isRecording ? (
+          /* WhatsApp Voice Recording UI */
+          <div className="flex-1 h-12 bg-[#2a3942] rounded-3xl px-4 flex items-center justify-between shadow-inner">
+            <div className="flex items-center gap-3">
+              <span className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-sm font-mono text-white font-semibold">
+                {formatRecordingTime(recordingSeconds)}
+              </span>
+              <span className="text-xs text-[#8696a0] hidden xs:inline">
+                Recording encrypted audio...
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => stopRecording(true)}
+                className="p-2 text-[#8696a0] hover:text-red-400 hover:bg-[#202c33] rounded-full transition-colors"
+                title="Discard Recording"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => stopRecording(false)}
+                className="w-9 h-9 rounded-full bg-[#00a884] text-white flex items-center justify-center hover:bg-[#008f6f] shadow-md transition-all active:scale-95"
+                title="Send Voice Note"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </div>
           </div>
-
-          <span className="text-[11px] text-gcs-muted truncate">Recording encrypted voice note...</span>
-
-          <div className="flex items-center gap-1.5 shrink-0">
+        ) : (
+          /* Normal WhatsApp Text Input Pill */
+          <div className="flex-1 bg-[#2a3942] rounded-3xl px-3 py-1.5 flex items-end gap-1.5 shadow-inner">
             <button
               type="button"
-              onClick={cancelRecording}
-              className="p-2 rounded-full hover:bg-red-500/20 text-gcs-muted hover:text-red-400 transition-colors"
-              title="Cancel"
+              className="p-1.5 text-[#8696a0] hover:text-white rounded-full transition-colors shrink-0"
+              title="Emoji"
             >
-              <Trash2 className="w-4 h-4" />
+              <Smile className="w-5 h-5" />
             </button>
+
             <button
               type="button"
-              onClick={stopRecording}
-              className="h-8 px-3 rounded-full bg-gcs-emerald hover:bg-[#00c28c] text-white font-bold text-xs flex items-center gap-1.5 shadow-md active:scale-95 transition-all"
-              title="Send Voice Note"
+              onClick={() => setShowAttachMenu(!showAttachMenu)}
+              className="p-1.5 text-[#8696a0] hover:text-white rounded-full transition-colors shrink-0"
+              title="Attach File"
             >
-              <Send className="w-3.5 h-3.5 fill-current" />
-              <span>Send</span>
+              <Paperclip className="w-5 h-5 -rotate-45" />
             </button>
+
+            <textarea
+              ref={inputRef}
+              rows={1}
+              value={text}
+              disabled={disabled}
+              placeholder={placeholder}
+              onChange={handleInput}
+              onKeyDown={handleKeyDown}
+              className="flex-1 bg-transparent text-white placeholder-[#8696a0] text-base sm:text-[15px] outline-none resize-none max-h-32 min-h-[28px] py-1 leading-relaxed"
+            />
           </div>
-        </div>
-      ) : (
-        <div className="flex items-end gap-1.5 sm:gap-2 bg-gcs-card/90 border border-gcs-border focus-within:border-gcs-emerald focus-within:ring-1 focus-within:ring-gcs-emerald/30 rounded-2xl p-1 sm:p-1.5 transition-all shadow-inner">
-          {/* Attachment Trigger */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setShowAttachMenu(!showAttachMenu)}
-            className={cn(
-              'h-9 w-9 text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card/60 shrink-0 rounded-full transition-all',
-              showAttachMenu && 'text-gcs-mint bg-gcs-emerald/20 rotate-45'
+        )}
+
+        {/* WhatsApp Right Action: Mic or Send Button */}
+        {!isRecording && (
+          <div>
+            {text.trim().length > 0 ? (
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={disabled || isSending}
+                className="w-12 h-12 rounded-full bg-[#00a884] hover:bg-[#008f6f] text-white flex items-center justify-center shadow-lg shadow-[#00a884]/30 active:scale-90 transition-all shrink-0"
+                title="Send Message"
+              >
+                <Send className="w-5 h-5 ml-0.5" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={startRecording}
+                disabled={disabled}
+                className="w-12 h-12 rounded-full bg-[#00a884] hover:bg-[#008f6f] text-white flex items-center justify-center shadow-lg shadow-[#00a884]/30 active:scale-90 transition-all shrink-0"
+                title="Hold or tap to record voice note"
+              >
+                <Mic className="w-5 h-5" />
+              </button>
             )}
-            aria-label="Attach File"
-          >
-            <Paperclip className="w-4 h-4" />
-          </Button>
-
-          {/* Text Input Area */}
-          <textarea
-            ref={inputRef}
-            rows={1}
-            value={text}
-            onChange={handleInput}
-            onKeyDown={handleKeyDown}
-            disabled={disabled || isSending}
-            placeholder={placeholder}
-            className="flex-1 bg-transparent text-gcs-text placeholder:text-gcs-muted/60 text-base sm:text-sm focus:outline-none resize-none max-h-32 py-2 px-1.5 leading-relaxed select-text min-h-[38px]"
-          />
-
-          {/* Send or Voice Note Button */}
-          {text.trim().length > 0 ? (
-            <Button
-              type="button"
-              variant="primary"
-              size="icon"
-              onClick={handleSend}
-              isLoading={isSending}
-              disabled={disabled}
-              className="h-9 w-9 shrink-0 rounded-full bg-gcs-emerald hover:bg-[#00c28c] text-white shadow-emerald-md transition-all active:scale-95"
-              aria-label="Send Encrypted Message"
-            >
-              <Send className="w-4 h-4 text-white fill-current" />
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={startRecording}
-              disabled={disabled}
-              className="h-9 w-9 text-gcs-muted hover:text-gcs-mint hover:bg-gcs-emerald/15 shrink-0 rounded-full transition-all active:scale-90"
-              aria-label="Record Voice Note"
-              title="Record Voice Note"
-            >
-              <Mic className="w-4 h-4" />
-            </Button>
-          )}
-        </div>
-      )}
-
-      {/* Security Footer Banner */}
-      <div className="flex items-center justify-center gap-1.5 text-[10px] sm:text-[11px] text-gcs-muted/70 pt-0.5 truncate">
-        <Lock className="w-3 h-3 text-gcs-emerald shrink-0" />
-        <span className="truncate">GCS Cyber-Shield • AES-256-GCM Zero-Plaintext Security</span>
+          </div>
+        )}
       </div>
     </div>
   );

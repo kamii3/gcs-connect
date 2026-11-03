@@ -7,6 +7,7 @@ import { ChatHeader } from '../components/chat/ChatHeader';
 import { MessageBubble, MessageProps } from '../components/chat/MessageBubble';
 import { ChatInput } from '../components/chat/ChatInput';
 import { CallModal } from '../components/chat/CallModal';
+import { InstallAppModal } from '../components/ui/InstallAppModal';
 import { Drawer } from '../components/ui/Drawer';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
@@ -82,6 +83,7 @@ export default function AppHome() {
 
   // WhatsApp-Style "New Chat" Contact Picker Modal State
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([]);
   const [directorySearch, setDirectorySearch] = useState('');
   const [directoryLoading, setDirectoryLoading] = useState(false);
@@ -1443,8 +1445,15 @@ export default function AppHome() {
           onDeleteConversation={handleDeleteConversation}
           onNewChat={() => setIsNewChatModalOpen(true)}
           onOpenSettings={() => setShowDrawer(true)}
+          onOpenInstallModal={() => setIsInstallModalOpen(true)}
+          onStartCall={(type, contactName) => {
+            setActiveCallerName(contactName);
+            startCall(type);
+          }}
+          onLogout={handleLogout}
           currentUserName={currentUser.fullName || currentUser.email}
           currentUserEmail={currentUser.email}
+          isAdmin={Boolean(currentUser?.roles?.includes('ADMIN') || currentUser?.role === 'ADMIN')}
         />
       </div>
 
@@ -1515,7 +1524,7 @@ export default function AppHome() {
             <div className="relative flex-1 min-h-0">
               <div
                 onScroll={handleMessagesScroll}
-                className="h-full overflow-y-auto p-2.5 sm:p-4 flex flex-col space-y-1.5 scroll-touch gcs-cyber-bg"
+                className="h-full overflow-y-auto p-2.5 sm:p-4 flex flex-col space-y-1.5 scroll-touch whatsapp-chat-bg bg-[#0b141a]"
               >
                 <div className="mx-auto my-2 sm:my-3 px-3 py-1 rounded-full bg-gcs-card/80 border border-gcs-border/60 text-[10px] sm:text-[11px] text-gcs-muted text-center max-w-sm flex items-center justify-center gap-1.5 shadow-sm shrink-0">
                   <Lock className="w-3 h-3 text-gcs-emerald shrink-0" />
@@ -1803,6 +1812,11 @@ export default function AppHome() {
         onEndCall={handleEndCall}
         onToggleMute={handleToggleMute}
         onToggleVideo={handleToggleVideo}
+      />
+      {/* Install GCS CONNECT App on Device Modal */}
+      <InstallAppModal
+        isOpen={isInstallModalOpen}
+        onClose={() => setIsInstallModalOpen(false)}
       />
     </main>
   );

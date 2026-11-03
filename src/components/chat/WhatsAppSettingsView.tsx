@@ -1,0 +1,385 @@
+'use client';
+
+import React, { useState } from 'react';
+import Link from 'next/link';
+import { Avatar } from '@/components/ui/Avatar';
+import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
+import {
+  Key,
+  Shield,
+  ShieldCheck,
+  Lock,
+  Smartphone,
+  Download,
+  Bell,
+  Palette,
+  HelpCircle,
+  LogOut,
+  ExternalLink,
+  ChevronRight,
+  HardDrive,
+  QrCode,
+  Check,
+  Eye,
+  Trash2,
+} from 'lucide-react';
+
+export interface WhatsAppSettingsViewProps {
+  currentUserName: string;
+  currentUserEmail: string;
+  onLogout: () => void;
+  onOpenInstallModal: () => void;
+  onClearAllChats?: () => void;
+  isAdmin?: boolean;
+}
+
+export const WhatsAppSettingsView: React.FC<WhatsAppSettingsViewProps> = ({
+  currentUserName,
+  currentUserEmail,
+  onLogout,
+  onOpenInstallModal,
+  onClearAllChats,
+  isAdmin = false,
+}) => {
+  const [aboutText, setAboutText] = useState('Connect Freely. Communicate Securely. 🔐');
+  const [isEditAboutModal, setIsEditAboutModal] = useState(false);
+  const [newAboutInput, setNewAboutInput] = useState(aboutText);
+  const [isSecurityModal, setIsSecurityModal] = useState(false);
+  const [isPrivacyModal, setIsPrivacyModal] = useState(false);
+  const [readReceipts, setReadReceipts] = useState(true);
+  const [isClearChatsConfirm, setIsClearChatsConfirm] = useState(false);
+
+  const handleSaveAbout = () => {
+    if (newAboutInput.trim()) {
+      setAboutText(newAboutInput.trim());
+    }
+    setIsEditAboutModal(false);
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto flex flex-col divide-y divide-gcs-border/20 select-none pb-20 md:pb-6">
+      {/* Profile Card */}
+      <div
+        onClick={() => {
+          setNewAboutInput(aboutText);
+          setIsEditAboutModal(true);
+        }}
+        className="p-4 hover:bg-gcs-card/40 transition-colors flex items-center justify-between cursor-pointer"
+      >
+        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+          <Avatar name={currentUserName} size="lg" status="online" />
+          <div className="flex flex-col min-w-0 flex-1">
+            <span className="text-base font-bold text-gcs-text truncate leading-tight">
+              {currentUserName}
+            </span>
+            <span className="text-xs text-gcs-muted truncate mt-0.5 font-mono">
+              {currentUserEmail}
+            </span>
+            <span className="text-[11.5px] text-gcs-mint truncate mt-1">
+              {aboutText}
+            </span>
+          </div>
+        </div>
+
+        <div className="p-2 rounded-xl text-gcs-muted hover:text-gcs-mint hover:bg-gcs-card transition-colors">
+          <QrCode className="w-5 h-5 text-gcs-emerald" />
+        </div>
+      </div>
+
+      {/* Settings Navigation List */}
+      <div className="flex flex-col py-2">
+        {/* Account & Security */}
+        <div
+          onClick={() => setIsSecurityModal(true)}
+          className="p-3.5 px-4 flex items-center justify-between hover:bg-gcs-card/50 cursor-pointer transition-colors"
+        >
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-9 h-9 rounded-full bg-gcs-card border border-gcs-border flex items-center justify-center text-gcs-emerald shrink-0">
+              <Key className="w-4.5 h-4.5" />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-semibold text-gcs-text">
+                Account & Security Keys
+              </span>
+              <span className="text-xs text-gcs-muted truncate">
+                Identity keys, X3DH prekeys, double ratchet state
+              </span>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-gcs-muted shrink-0" />
+        </div>
+
+        {/* Privacy */}
+        <div
+          onClick={() => setIsPrivacyModal(true)}
+          className="p-3.5 px-4 flex items-center justify-between hover:bg-gcs-card/50 cursor-pointer transition-colors"
+        >
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-9 h-9 rounded-full bg-gcs-card border border-gcs-border flex items-center justify-center text-gcs-emerald shrink-0">
+              <Lock className="w-4.5 h-4.5" />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-semibold text-gcs-text">
+                Privacy
+              </span>
+              <span className="text-xs text-gcs-muted truncate">
+                Read receipts, last seen, end-to-end status
+              </span>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-gcs-muted shrink-0" />
+        </div>
+
+        {/* Install App on Device (PWA) */}
+        <div
+          onClick={onOpenInstallModal}
+          className="p-3.5 px-4 flex items-center justify-between hover:bg-gcs-emerald/10 cursor-pointer transition-colors border-y border-gcs-emerald/20 bg-gcs-emerald/5"
+        >
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-9 h-9 rounded-full bg-gcs-emerald/20 border border-gcs-emerald/40 flex items-center justify-center text-gcs-mint shrink-0 shadow-emerald-sm">
+              <Smartphone className="w-4.5 h-4.5 text-gcs-emerald" />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-bold text-gcs-mint">
+                  Install App on Device
+                </span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-gcs-emerald text-white font-bold">
+                  NEW
+                </span>
+              </div>
+              <span className="text-xs text-gcs-muted truncate">
+                Add GCS CONNECT to your phone or desktop home screen
+              </span>
+            </div>
+          </div>
+          <Download className="w-4 h-4 text-gcs-emerald shrink-0" />
+        </div>
+
+        {/* Admin Console (If Admin) */}
+        {isAdmin && (
+          <Link
+            href="/admin"
+            className="p-3.5 px-4 flex items-center justify-between hover:bg-gcs-card/50 cursor-pointer transition-colors"
+          >
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="w-9 h-9 rounded-full bg-gcs-card border border-gcs-emerald/40 flex items-center justify-center text-gcs-emerald shrink-0">
+                <ShieldCheck className="w-4.5 h-4.5" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm font-semibold text-gcs-text">
+                  Admin Console
+                </span>
+                <span className="text-xs text-gcs-muted truncate">
+                  User accounts, audit logs, and security controls
+                </span>
+              </div>
+            </div>
+            <ExternalLink className="w-4 h-4 text-gcs-emerald shrink-0" />
+          </Link>
+        )}
+
+        {/* Chats & Wallpaper */}
+        <div
+          onClick={() => setIsClearChatsConfirm(true)}
+          className="p-3.5 px-4 flex items-center justify-between hover:bg-gcs-card/50 cursor-pointer transition-colors"
+        >
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-9 h-9 rounded-full bg-gcs-card border border-gcs-border flex items-center justify-center text-gcs-emerald shrink-0">
+              <Palette className="w-4.5 h-4.5" />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-semibold text-gcs-text">
+                Chats & Wallpaper
+              </span>
+              <span className="text-xs text-gcs-muted truncate">
+                Theme: Clean Obsidian Dark • Zero Distraction
+              </span>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-gcs-muted shrink-0" />
+        </div>
+
+        {/* Help & About */}
+        <div className="p-3.5 px-4 flex items-center justify-between hover:bg-gcs-card/50 cursor-pointer transition-colors">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-9 h-9 rounded-full bg-gcs-card border border-gcs-border flex items-center justify-center text-gcs-emerald shrink-0">
+              <HelpCircle className="w-4.5 h-4.5" />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-semibold text-gcs-text">
+                Help & About
+              </span>
+              <span className="text-xs text-gcs-muted truncate">
+                GCS CONNECT v2.4.0 • Global Crest Solutions
+              </span>
+            </div>
+          </div>
+          <span className="text-xs font-mono text-gcs-muted">v2.4</span>
+        </div>
+
+        {/* Sign Out */}
+        <div
+          onClick={onLogout}
+          className="p-3.5 px-4 flex items-center justify-between hover:bg-red-500/10 cursor-pointer transition-colors text-red-400"
+        >
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-9 h-9 rounded-full bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0">
+              <LogOut className="w-4.5 h-4.5" />
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-semibold">
+                Sign Out
+              </span>
+              <span className="text-xs text-red-400/70 truncate">
+                Terminates encrypted session from this device
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Edit About Modal */}
+      <Modal
+        isOpen={isEditAboutModal}
+        onClose={() => setIsEditAboutModal(false)}
+        title="Edit About & Status"
+        description="Your about text is visible to other verified colleagues in the GCS directory."
+      >
+        <div className="flex flex-col gap-4 text-sm mt-1">
+          <input
+            type="text"
+            value={newAboutInput}
+            onChange={(e) => setNewAboutInput(e.target.value)}
+            maxLength={100}
+            className="w-full p-3 bg-gcs-card text-gcs-text border border-gcs-border rounded-xl text-sm focus:outline-none focus:border-gcs-emerald"
+          />
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" size="sm" onClick={() => setIsEditAboutModal(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="sm" onClick={handleSaveAbout} className="bg-gcs-emerald">
+              Save
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Security Keys Modal */}
+      <Modal
+        isOpen={isSecurityModal}
+        onClose={() => setIsSecurityModal(false)}
+        title="Cryptographic Key Inventory"
+        description="Client-side end-to-end cryptographic attributes active for this device."
+      >
+        <div className="flex flex-col gap-3 text-xs mt-1">
+          <div className="p-3 rounded-xl bg-gcs-sidebar border border-gcs-border space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-gcs-muted">Identity Key (IK):</span>
+              <span className="font-mono text-gcs-mint">Curve25519 Verified</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gcs-muted">Symmetric Cipher:</span>
+              <span className="font-mono text-gcs-mint">AES-256-GCM (AEAD)</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gcs-muted">Media Encryption:</span>
+              <span className="font-mono text-gcs-mint">AES-CTR + HMAC-SHA256</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gcs-muted">Calling Stream:</span>
+              <span className="font-mono text-gcs-mint">DTLS-SRTP P2P</span>
+            </div>
+          </div>
+          <div className="p-3 rounded-xl bg-gcs-emerald/10 border border-gcs-emerald/30 text-gcs-mint">
+            🔒 Private keys are strictly stored in browser IndexedDB and never transmitted to the Hostinger server.
+          </div>
+          <div className="flex justify-end pt-2">
+            <Button variant="ghost" size="sm" onClick={() => setIsSecurityModal(false)}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Privacy Settings Modal */}
+      <Modal
+        isOpen={isPrivacyModal}
+        onClose={() => setIsPrivacyModal(false)}
+        title="Privacy Settings"
+        description="Manage your read receipts, online presence, and security indicators."
+      >
+        <div className="flex flex-col gap-4 text-xs mt-1">
+          <div className="flex items-center justify-between p-3 rounded-xl bg-gcs-sidebar border border-gcs-border">
+            <div>
+              <span className="text-sm font-semibold text-gcs-text block">
+                Read Receipts (Blue Ticks)
+              </span>
+              <span className="text-gcs-muted text-[11px] block mt-0.5">
+                If turned off, you won't send or receive read receipts.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReadReceipts(!readReceipts)}
+              className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors ${
+                readReceipts ? 'bg-gcs-emerald' : 'bg-gcs-border'
+              }`}
+            >
+              <div
+                className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                  readReceipts ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <Button variant="ghost" size="sm" onClick={() => setIsPrivacyModal(false)}>
+              Done
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Clear All Chats Confirmation Modal */}
+      <Modal
+        isOpen={isClearChatsConfirm}
+        onClose={() => setIsClearChatsConfirm(false)}
+        title="Chat & Wallpaper Options"
+        description="Customize your chat display and manage conversation data."
+      >
+        <div className="flex flex-col gap-3 text-xs mt-1">
+          <div className="p-3 rounded-xl bg-gcs-sidebar border border-gcs-border space-y-1">
+            <span className="font-semibold text-gcs-text block">Chat Wallpaper</span>
+            <p className="text-gcs-muted text-[11px]">
+              Chat background is set to the default clean WhatsApp Obsidian Dark mode with zero background image.
+            </p>
+          </div>
+
+          {onClearAllChats && (
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => {
+                setIsClearChatsConfirm(false);
+                onClearAllChats();
+              }}
+              className="w-full text-xs h-9 bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white flex items-center justify-center gap-2"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Clear All Chat History</span>
+            </Button>
+          )}
+
+          <div className="flex justify-end pt-2">
+            <Button variant="ghost" size="sm" onClick={() => setIsClearChatsConfirm(false)}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+};

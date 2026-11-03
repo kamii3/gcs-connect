@@ -1,0 +1,31 @@
+{
+  "name": "GCS CONNECT — Connect Freely. Communicate Securely.",
+  "short_name": "GCS CONNECT",
+  "description": "Enterprise-grade end-to-end encrypted messaging, voice, and video platform.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0B100E",
+  "theme_color": "#00A879",
+  "orientation": "portrait-primary",
+  "categories": ["business", "communication", "productivity"],
+  "icons": [
+    {
+      "src": "/images/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/images/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/images/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}
