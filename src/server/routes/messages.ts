@@ -212,8 +212,12 @@ router.get('/conversations/:id/messages', authenticate, async (req: Request, res
   try {
     const { id: conversationId } = req.params;
     const callerId = req.user!.id;
-    const limit = Math.min(parseInt((req.query.limit as string) || '50', 10), 100);
+    const isAll = req.query.all === 'true';
+    const limit = isAll
+      ? 5000
+      : Math.min(parseInt((req.query.limit as string) || '150', 10), 1000);
     const cursor = req.query.cursor as string | undefined;
+    const includeCleared = req.query.includeCleared === 'true' || isAll;
 
     // Purge expired disappearing messages
     await purgeExpiredMessages();
@@ -233,7 +237,7 @@ router.get('/conversations/:id/messages', authenticate, async (req: Request, res
       return;
     }
 
-    const clearedBefore = member.clearedHistoryBefore || new Date(0);
+    const clearedBefore = includeCleared ? new Date(0) : (member.clearedHistoryBefore || new Date(0));
     const now = new Date();
 
     const whereClause: any = {
@@ -281,10 +285,14 @@ router.get('/conversations/:id/messages', authenticate, async (req: Request, res
     const hasMore = messages.length > limit;
     const returnedMessages = hasMore ? messages.slice(0, limit) : messages;
     const nextCursor = hasMore ? returnedMessages[returnedMessages.length - 1].id : null;
+    const totalCount = await prisma.message.count({
+      where: whereClause,
+    });
 
     res.json({
       success: true,
       messages: returnedMessages,
+      totalCount,
       nextCursor,
       hasMore,
     });

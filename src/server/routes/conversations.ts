@@ -108,14 +108,13 @@ router.post('/direct', authenticate, async (req: Request, res: Response) => {
       return;
     }
 
-    // Check for existing active direct conversation between these two users
+    // Check for ANY existing direct conversation between these two users (even if previously left/soft-deleted)
     const existingConv = await prisma.conversation.findFirst({
       where: {
         type: 'DIRECT',
-        deletedAt: null,
         AND: [
-          { members: { some: { userId: callerId, leftAt: null } } },
-          { members: { some: { userId: targetUserId, leftAt: null } } },
+          { members: { some: { userId: callerId } } },
+          { members: { some: { userId: targetUserId } } },
         ],
       },
       include: {
@@ -137,6 +136,24 @@ router.post('/direct', authenticate, async (req: Request, res: Response) => {
     });
 
     if (existingConv) {
+      // Restore conversation if soft-deleted, and restore active membership for both users
+      await prisma.$transaction(async (tx) => {
+        if (existingConv.deletedAt) {
+          await tx.conversation.update({
+            where: { id: existingConv.id },
+            data: { deletedAt: null },
+          });
+        }
+        await tx.conversationMember.updateMany({
+          where: {
+            conversationId: existingConv.id,
+            userId: { in: [callerId, targetUserId] },
+            leftAt: { not: null },
+          },
+          data: { leftAt: null },
+        });
+      });
+
       res.json({
         success: true,
         conversation: existingConv,
@@ -594,7 +611,8 @@ router.post('/:id/clear', authenticate, async (req: Request, res: Response) => {
 
 /**
  * DELETE /api/conversations/:id
- * Permanently delete entire conversation and all its messages
+ * Remove conversation from caller's view (soft-delete / leave)
+ * Messages are preserved in database to prevent data loss.
  */
 router.delete('/:id', authenticate, async (req: Request, res: Response) => {
   try {
@@ -613,7 +631,6 @@ router.delete('/:id', authenticate, async (req: Request, res: Response) => {
 
     const conversation = await prisma.conversation.findUnique({
       where: { id },
-      include: { messages: true },
     });
 
     if (!conversation) {
@@ -621,52 +638,34 @@ router.delete('/:id', authenticate, async (req: Request, res: Response) => {
       return;
     }
 
-    const messageIds = conversation.messages.map((m) => m.id);
+    const now = new Date();
 
-    await prisma.$transaction(async (tx) => {
-      if (messageIds.length > 0) {
-        // Delete message attachments
-        await tx.attachment.deleteMany({
-          where: { messageId: { in: messageIds } },
-        });
-
-        // Delete message receipts
-        await tx.messageReceipt.deleteMany({
-          where: { messageId: { in: messageIds } },
-        });
-
-        // Delete message reactions
-        await tx.messageReaction.deleteMany({
-          where: { messageId: { in: messageIds } },
-        });
-
-        // Delete all messages in the conversation
-        await tx.message.deleteMany({
-          where: { conversationId: id },
-        });
-      }
-
-      // Delete call records in this conversation if any
-      const calls = await tx.call.findMany({ where: { conversationId: id } });
-      const callIds = calls.map((c) => c.id);
-      if (callIds.length > 0) {
-        await tx.callParticipant.deleteMany({ where: { callId: { in: callIds } } });
-        await tx.call.deleteMany({ where: { conversationId: id } });
-      }
-
-      // Delete conversation members
-      await tx.conversationMember.deleteMany({
-        where: { conversationId: id },
-      });
-
-      // Delete conversation
-      await tx.conversation.delete({
-        where: { id },
-      });
+    // Soft-delete / leave for caller: Mark leftAt and clearedHistoryBefore
+    await prisma.conversationMember.update({
+      where: { id: member.id },
+      data: {
+        leftAt: now,
+        clearedHistoryBefore: now,
+      },
     });
 
+    // If no active members remain, mark conversation as deleted
+    const activeCount = await prisma.conversationMember.count({
+      where: {
+        conversationId: id,
+        leftAt: null,
+      },
+    });
+
+    if (activeCount === 0) {
+      await prisma.conversation.update({
+        where: { id },
+        data: { deletedAt: now },
+      });
+    }
+
     if (io) {
-      io.to(`conversation:${id}`).emit('conversation:deleted', {
+      io.to(`user:${callerId}`).emit('conversation:deleted', {
         conversationId: id,
         deletedByUserId: callerId,
       });
@@ -674,7 +673,7 @@ router.delete('/:id', authenticate, async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      message: 'Conversation and all messages were permanently deleted.',
+      message: 'Conversation removed from your chat list.',
     });
   } catch (error: any) {
     console.error('[DeleteConversationError]', error);

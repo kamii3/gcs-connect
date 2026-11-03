@@ -123,6 +123,9 @@ export default function AppHome() {
 
   const prevActiveIdRef = useRef<string | undefined>(activeId);
   const prevMsgCountRef = useRef<number>(messages.length);
+  const messagesCacheRef = useRef<Record<string, MessageProps[]>>({});
+  const lastScrolledConvIdRef = useRef<string | null>(null);
+  const [isRefreshingMessages, setIsRefreshingMessages] = useState(false);
 
   const { toast } = useToast();
 
@@ -147,12 +150,19 @@ export default function AppHome() {
   // Glitch-free smart scrolling: instant snap on conversation switch, smooth on new message
   useEffect(() => {
     if (!messagesEndRef.current) return;
-    const isNewChat = prevActiveIdRef.current !== activeId;
-    prevActiveIdRef.current = activeId;
 
-    if (isNewChat) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
-    } else if (messages.length > prevMsgCountRef.current) {
+    // When opening a new conversation or first loading messages into it:
+    if (lastScrolledConvIdRef.current !== activeId) {
+      if (messages.length > 0) {
+        lastScrolledConvIdRef.current = activeId;
+        messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
+      }
+      prevMsgCountRef.current = messages.length;
+      return;
+    }
+
+    // Only when already inside this conversation and a new message arrives or is sent:
+    if (messages.length > prevMsgCountRef.current) {
       const lastMsg = messages[messages.length - 1];
       if (lastMsg?.isSentByMe || !showScrollBottom) {
         messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -611,29 +621,38 @@ export default function AppHome() {
         };
 
         setMessages((prev) => {
-          if (prev.some((m) => m.id === msg.id)) return prev;
-          if (isMe) {
+          let updated = prev;
+          if (prev.some((m) => m.id === msg.id)) {
+            updated = prev;
+          } else if (isMe) {
             const pendingIdx = prev.findIndex((m) => m.id.startsWith('m-') && m.isSentByMe);
             if (pendingIdx !== -1) {
               const next = [...prev];
               next[pendingIdx] = newMsg;
-              return next;
+              updated = next;
+            } else {
+              updated = [...prev, newMsg];
             }
+          } else {
+            updated = [...prev, newMsg];
           }
-          return [...prev, newMsg];
+          messagesCacheRef.current[msg.conversationId] = updated;
+          return updated;
         });
 
         // Auto-decrypt image/video/audio in background for preview
         if (attachmentObj?.mediaKey) {
           decryptAndCreateBlob(attachmentObj).then((blobUrl) => {
             if (blobUrl) {
-              setMessages((prev) =>
-                prev.map((m) =>
+              setMessages((prev) => {
+                const next = prev.map((m) =>
                   m.id === msg.id && m.attachment
                     ? { ...m, attachment: { ...m.attachment, url: blobUrl } }
                     : m
-                )
-              );
+                );
+                messagesCacheRef.current[msg.conversationId] = next;
+                return next;
+              });
             }
           });
         }
@@ -647,6 +666,12 @@ export default function AppHome() {
           }).catch(() => {});
         }
       } else {
+        if (messagesCacheRef.current[msg.conversationId]) {
+          const cache = messagesCacheRef.current[msg.conversationId];
+          if (!cache.some((m) => m.id === msg.id)) {
+            messagesCacheRef.current[msg.conversationId] = [...cache, newMsg];
+          }
+        }
         if (!isMe) {
           fetch(`/api/messages/${msg.id}/receipt`, {
             method: 'POST',
@@ -848,10 +873,20 @@ export default function AppHome() {
       prev.map((c) => (c.id === activeId ? { ...c, unreadCount: 0 } : c))
     );
 
-    let isCurrent = true;
-    setIsMessagesLoading(true);
+    // Instant render from cache if available (eliminates glitch & flicker)
+    if (messagesCacheRef.current[activeId]) {
+      setMessages(messagesCacheRef.current[activeId]);
+      setIsMessagesLoading(false);
+      setIsRefreshingMessages(true);
+    } else {
+      setMessages([]);
+      setIsMessagesLoading(true);
+      setIsRefreshingMessages(false);
+    }
 
-    fetch(`/api/conversations/${activeId}/messages`)
+    let isCurrent = true;
+
+    fetch(`/api/conversations/${activeId}/messages?limit=200`)
       .then((res) => res.json())
       .then(async (data) => {
         if (!isCurrent) return;
@@ -984,13 +1019,20 @@ export default function AppHome() {
           );
 
           if (isCurrent) {
-            setMessages(loaded.reverse());
+            const reversed = loaded.reverse();
+            messagesCacheRef.current[activeId] = reversed;
+            setMessages(reversed);
+            setIsMessagesLoading(false);
+            setIsRefreshingMessages(false);
           }
         }
       })
       .catch((err) => console.error('Failed to load messages:', err))
       .finally(() => {
-        if (isCurrent) setIsMessagesLoading(false);
+        if (isCurrent) {
+          setIsMessagesLoading(false);
+          setIsRefreshingMessages(false);
+        }
       });
 
     return () => {
@@ -1163,12 +1205,16 @@ export default function AppHome() {
       if (res.ok && data.message) {
         playSound('sent');
         setMessages((prev) => {
+          let updated: MessageProps[];
           if (prev.some((m) => m.id === data.message.id)) {
-            return prev.filter((m) => m.id !== tempId);
+            updated = prev.filter((m) => m.id !== tempId);
+          } else {
+            updated = prev.map((m) =>
+              m.id === tempId ? { ...m, id: data.message.id, status: 'sent' } : m
+            );
           }
-          return prev.map((m) =>
-            m.id === tempId ? { ...m, id: data.message.id, status: 'sent' } : m
-          );
+          messagesCacheRef.current[activeId] = updated;
+          return updated;
         });
 
         setConversations((prev) =>
@@ -1196,8 +1242,8 @@ export default function AppHome() {
     const hasReacted = existing?.hasReacted || false;
 
     // Optimistic local update
-    setMessages((prev) =>
-      prev.map((m) => {
+    setMessages((prev) => {
+      const next = prev.map((m) => {
         if (m.id !== messageId) return m;
         const currentReactions = m.reactions || [];
         const match = currentReactions.find((r) => r.emoji === emoji);
@@ -1220,8 +1266,10 @@ export default function AppHome() {
           }
         }
         return { ...m, reactions: updated };
-      })
-    );
+      });
+      messagesCacheRef.current[activeId] = next;
+      return next;
+    });
 
     try {
       if (hasReacted) {
@@ -1352,8 +1400,8 @@ export default function AppHome() {
       }
 
       // 5. Update local message with real ID and sent status
-      setMessages((prev) =>
-        prev.map((m) =>
+      setMessages((prev) => {
+        const next = prev.map((m) =>
           m.id === tempId
             ? {
                 ...m,
@@ -1365,8 +1413,10 @@ export default function AppHome() {
                 },
               }
             : m
-        )
-      );
+        );
+        messagesCacheRef.current[activeId] = next;
+        return next;
+      });
 
       playSound('sent');
       toast({
@@ -1378,7 +1428,11 @@ export default function AppHome() {
     } catch (err: any) {
       console.error('Failed to send file:', err);
       toast({ type: 'error', message: err.message || 'Failed to send file.' });
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setMessages((prev) => {
+        const next = prev.filter((m) => m.id !== tempId);
+        messagesCacheRef.current[activeId] = next;
+        return next;
+      });
     }
   };
 
@@ -1393,8 +1447,8 @@ export default function AppHome() {
     }
 
     if (deleteForEveryone) {
-      setMessages((prev) =>
-        prev.map((m) =>
+      setMessages((prev) => {
+        const next = prev.map((m) =>
           m.id === id
             ? {
                 ...m,
@@ -1402,14 +1456,20 @@ export default function AppHome() {
                 isDeletedForEveryone: true,
               }
             : m
-        )
-      );
+        );
+        messagesCacheRef.current[activeId] = next;
+        return next;
+      });
       toast({
         type: 'info',
         message: 'Message deleted for everyone.',
       });
     } else {
-      setMessages((prev) => prev.filter((m) => m.id !== id));
+      setMessages((prev) => {
+        const next = prev.filter((m) => m.id !== id);
+        messagesCacheRef.current[activeId] = next;
+        return next;
+      });
       toast({
         type: 'info',
         message: 'Message removed from your view.',
@@ -1422,7 +1482,7 @@ export default function AppHome() {
     const conv = conversations.find((c) => c.id === conversationId);
     const convName = conv ? conv.name : 'this chat';
     const confirmed = window.confirm(
-      `Are you sure you want to delete "${convName}"? All messages and attachments in this conversation will be permanently removed.`
+      `Are you sure you want to remove "${convName}" from your chat list? Your chat history remains safely backed up.`
     );
     if (!confirmed) return;
 
@@ -1431,6 +1491,8 @@ export default function AppHome() {
     } catch (e) {
       console.error('Conversation delete error:', e);
     }
+
+    delete messagesCacheRef.current[conversationId];
 
     setConversations((prev) => {
       const remaining = prev.filter((c) => c.id !== conversationId);
@@ -1447,7 +1509,7 @@ export default function AppHome() {
 
     toast({
       type: 'info',
-      message: `Conversation "${convName}" was permanently deleted.`,
+      message: `Conversation "${convName}" was removed from your chat list.`,
     });
   };
 
@@ -1455,16 +1517,199 @@ export default function AppHome() {
   const handleClearHistory = async () => {
     if (!activeId) return;
     const confirmed = window.confirm(
-      'Are you sure you want to clear all message history in this conversation for your account?'
+      'Are you sure you want to clear message history in this conversation for your view?'
     );
     if (!confirmed) return;
 
     try {
       await fetch(`/api/conversations/${activeId}/clear`, { method: 'POST' });
       setMessages([]);
-      toast({ type: 'info', message: 'Chat history cleared.' });
+      delete messagesCacheRef.current[activeId];
+      toast({ type: 'info', message: 'Chat history cleared for your view.' });
     } catch (e) {
       console.error('Clear history error:', e);
+    }
+  };
+
+  // Export single chat transcript as readable text
+  const handleExportChat = async (targetConvId?: string) => {
+    const convId = targetConvId || activeId;
+    if (!convId) return;
+
+    const convItem = conversations.find((c) => c.id === convId);
+    const convTitle = convItem?.name || 'Encrypted Chat';
+
+    try {
+      toast({ type: 'info', message: 'Generating decrypted chat export...' });
+
+      const res = await fetch(`/api/conversations/${convId}/messages?all=true&includeCleared=true`);
+      const data = await res.json();
+
+      if (!res.ok || !data.success || !Array.isArray(data.messages)) {
+        toast({ type: 'error', message: 'Failed to retrieve chat messages for export.' });
+        return;
+      }
+
+      const key = await getConversationKey(convId);
+      const lines: string[] = [
+        '================================================================================',
+        `GCS CONNECT — End-to-End Encrypted Chat Export`,
+        `Conversation: ${convTitle}`,
+        `Exported On: ${new Date().toLocaleString()}`,
+        `Total Messages: ${data.messages.length}`,
+        `Security Protocol: Web Crypto AES-256-GCM (Zero Plaintext Server Storage)`,
+        '================================================================================',
+        '',
+      ];
+
+      // Decrypt messages in chronological order
+      const sorted = [...data.messages].sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+
+      for (const m of sorted) {
+        let text = '';
+        if (m.isDeletedForEveryone) {
+          text = '[This message was deleted]';
+        } else {
+          try {
+            text = await decryptAESGCM(key, m.encryptedPayload, m.initializationVector, m.authTag);
+          } catch {
+            text = '[Encrypted payload]';
+          }
+
+          if (text.startsWith('{"type":"REPLY"') || text.startsWith('{"replyTo"')) {
+            try {
+              const p = JSON.parse(text);
+              text = `(In reply to ${p.replyTo?.senderName || 'user'}: "${p.replyTo?.content || ''}") ${p.text || ''}`;
+            } catch {}
+          } else if (text.startsWith('{"type":"MEDIA"') || text.startsWith('{"mediaKey"')) {
+            try {
+              const p = JSON.parse(text);
+              text = `<Attachment: ${p.fileName || 'file'} (${Math.round((p.fileSizeBytes || 0) / 1024)} KB)>`;
+            } catch {
+              text = '<Encrypted File Attachment>';
+            }
+          }
+        }
+
+        const sender =
+          m.senderDevice?.user?.fullName ||
+          (m.senderDevice?.userId === currentUser?.id ? 'You' : 'User');
+        const timeStr = new Date(m.createdAt).toLocaleString();
+        lines.push(`[${timeStr}] ${sender}: ${text}`);
+      }
+
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const safeTitle = convTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const dateTag = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `GCS_Chat_${safeTitle}_${dateTag}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({ type: 'success', message: `Exported ${sorted.length} messages for ${convTitle}!` });
+    } catch (err: any) {
+      console.error('[ExportChatError]', err);
+      toast({
+        type: 'error',
+        message: 'Failed to export chat: ' + (err.message || 'Unknown error'),
+      });
+    }
+  };
+
+  // Export ALL conversations transcript archive
+  const handleExportAllChats = async () => {
+    if (conversations.length === 0) {
+      toast({ type: 'info', message: 'No conversations to export.' });
+      return;
+    }
+
+    try {
+      toast({ type: 'info', message: 'Exporting complete chat archive...' });
+
+      const allSections: string[] = [
+        '================================================================================',
+        `GCS CONNECT — Complete Workplace Chat History Archive`,
+        `Account: ${currentUser?.fullName} (${currentUser?.email})`,
+        `Exported On: ${new Date().toLocaleString()}`,
+        `Total Active Conversations: ${conversations.length}`,
+        `Encryption: Zero Plaintext Storage (AES-256-GCM)`,
+        '================================================================================',
+        '',
+      ];
+
+      for (const conv of conversations) {
+        try {
+          const res = await fetch(`/api/conversations/${conv.id}/messages?all=true&includeCleared=true`);
+          const data = await res.json();
+          if (res.ok && data.success && Array.isArray(data.messages)) {
+            const key = await getConversationKey(conv.id);
+            allSections.push('');
+            allSections.push('--------------------------------------------------------------------------------');
+            allSections.push(`CONVERSATION: ${conv.name} (ID: ${conv.id})`);
+            allSections.push(`Messages Count: ${data.messages.length}`);
+            allSections.push('--------------------------------------------------------------------------------');
+
+            const sorted = [...data.messages].sort(
+              (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            );
+
+            for (const m of sorted) {
+              let text = '';
+              if (m.isDeletedForEveryone) {
+                text = '[This message was deleted]';
+              } else {
+                try {
+                  text = await decryptAESGCM(key, m.encryptedPayload, m.initializationVector, m.authTag);
+                } catch {
+                  text = '[Encrypted payload]';
+                }
+                if (text.startsWith('{"type":"REPLY"') || text.startsWith('{"replyTo"')) {
+                  try {
+                    const p = JSON.parse(text);
+                    text = `(In reply to ${p.replyTo?.senderName || 'user'}): ${p.text || ''}`;
+                  } catch {}
+                } else if (text.startsWith('{"type":"MEDIA"') || text.startsWith('{"mediaKey"')) {
+                  try {
+                    const p = JSON.parse(text);
+                    text = `<Attachment: ${p.fileName || 'file'}>`;
+                  } catch {}
+                }
+              }
+              const sender =
+                m.senderDevice?.user?.fullName ||
+                (m.senderDevice?.userId === currentUser?.id ? 'You' : 'User');
+              allSections.push(`[${new Date(m.createdAt).toLocaleString()}] ${sender}: ${text}`);
+            }
+          }
+        } catch (e) {
+          console.error(`Error exporting conv ${conv.id}:`, e);
+        }
+      }
+
+      const blob = new Blob([allSections.join('\n')], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const dateTag = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `GCS_Complete_Chat_Archive_${dateTag}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({ type: 'success', message: 'Complete chat archive exported successfully!' });
+    } catch (err: any) {
+      console.error('[ExportAllChatsError]', err);
+      toast({
+        type: 'error',
+        message: 'Failed to export chats: ' + (err.message || 'Unknown error'),
+      });
     }
   };
 
@@ -1887,6 +2132,7 @@ export default function AppHome() {
           onNewChat={() => setIsNewChatModalOpen(true)}
           onOpenSettings={() => setShowDrawer(true)}
           onOpenInstallModal={() => setIsInstallModalOpen(true)}
+          onExportAllChats={handleExportAllChats}
           onStartCall={(type, contactName) => {
             setActiveCallerName(contactName);
             startCall(type);
@@ -1955,6 +2201,7 @@ export default function AppHome() {
               onBack={() => setActiveId('')}
               onVoiceCall={() => startCall('voice')}
               onVideoCall={() => startCall('video')}
+              onExportChat={() => handleExportChat(activeContact.id)}
               onClearHistory={handleClearHistory}
               onDeleteChat={() => handleDeleteConversation(activeContact.id)}
               onSearch={() =>
@@ -1969,6 +2216,13 @@ export default function AppHome() {
 
             {/* Chat Messages Stream with cyber-obsidian & emerald theme */}
             <div className="relative flex-1 min-h-0">
+              {/* Subtle WhatsApp-style non-intrusive syncing line at top */}
+              {isRefreshingMessages && messages.length > 0 && (
+                <div className="absolute top-0 left-0 right-0 h-0.5 bg-[#00a884]/20 overflow-hidden z-10 pointer-events-none">
+                  <div className="w-full h-full bg-[#00a884] animate-pulse" />
+                </div>
+              )}
+
               <div
                 onScroll={handleMessagesScroll}
                 className="h-full overflow-y-auto overflow-x-hidden p-2.5 sm:p-4 flex flex-col space-y-1.5 scroll-touch whatsapp-chat-bg bg-[#0b141a]"
@@ -1979,9 +2233,11 @@ export default function AppHome() {
                 </div>
 
                 {isMessagesLoading ? (
-                  <div className="text-center text-xs text-gcs-muted my-auto py-8 flex items-center justify-center gap-2">
-                    <span className="w-3 h-3 border-2 border-gcs-emerald border-t-transparent rounded-full animate-spin" />
-                    <span>Loading encrypted messages...</span>
+                  <div className="flex-1 flex flex-col items-center justify-center py-12 gap-3 text-gcs-muted animate-fade-in my-auto">
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#111b21] border border-gcs-border/50 text-xs shadow-md">
+                      <span className="w-3.5 h-3.5 border-2 border-[#00a884] border-t-transparent rounded-full animate-spin shrink-0" />
+                      <span className="text-gcs-mint font-medium">Decrypting message history...</span>
+                    </div>
                   </div>
                 ) : messages.length === 0 ? (
                   <div className="text-center text-xs text-gcs-muted my-auto py-8">

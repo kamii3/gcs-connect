@@ -30,6 +30,7 @@ export interface ChatHeaderProps {
   onVoiceCall?: () => void;
   onVideoCall?: () => void;
   onSearch?: () => void;
+  onExportChat?: () => void;
   onClearHistory?: () => void;
   onDeleteChat?: () => void;
   onMoreOptions?: () => void;
@@ -47,6 +48,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   onVoiceCall,
   onVideoCall,
   onSearch,
+  onExportChat,
   onClearHistory,
   onDeleteChat,
   onMoreOptions,
@@ -213,6 +215,20 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
             </div>
 
             <div className="py-1">
+              {onExportChat && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDropdownOpen(false);
+                    onExportChat();
+                  }}
+                  className="w-full px-3.5 py-2.5 text-left hover:bg-[#182229] flex items-center gap-2.5 text-gcs-muted hover:text-white transition-colors"
+                >
+                  <Download className="w-4 h-4 text-[#00a884]" />
+                  <span>Export chat</span>
+                </button>
+              )}
+
               {onClearHistory && (
                 <button
                   type="button"

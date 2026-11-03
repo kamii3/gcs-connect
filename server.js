@@ -2141,10 +2141,9 @@ router4.post("/direct", authenticate, async (req, res) => {
     const existingConv = await db_default.conversation.findFirst({
       where: {
         type: "DIRECT",
-        deletedAt: null,
         AND: [
-          { members: { some: { userId: callerId, leftAt: null } } },
-          { members: { some: { userId: targetUserId, leftAt: null } } }
+          { members: { some: { userId: callerId } } },
+          { members: { some: { userId: targetUserId } } }
         ]
       },
       include: {
@@ -2165,6 +2164,22 @@ router4.post("/direct", authenticate, async (req, res) => {
       }
     });
     if (existingConv) {
+      await db_default.$transaction(async (tx) => {
+        if (existingConv.deletedAt) {
+          await tx.conversation.update({
+            where: { id: existingConv.id },
+            data: { deletedAt: null }
+          });
+        }
+        await tx.conversationMember.updateMany({
+          where: {
+            conversationId: existingConv.id,
+            userId: { in: [callerId, targetUserId] },
+            leftAt: { not: null }
+          },
+          data: { leftAt: null }
+        });
+      });
       res.json({
         success: true,
         conversation: existingConv,
@@ -2560,51 +2575,41 @@ router4.delete("/:id", authenticate, async (req, res) => {
       return;
     }
     const conversation = await db_default.conversation.findUnique({
-      where: { id },
-      include: { messages: true }
+      where: { id }
     });
     if (!conversation) {
       res.status(404).json({ error: "NOT_FOUND", message: "Conversation does not exist." });
       return;
     }
-    const messageIds = conversation.messages.map((m) => m.id);
-    await db_default.$transaction(async (tx) => {
-      if (messageIds.length > 0) {
-        await tx.attachment.deleteMany({
-          where: { messageId: { in: messageIds } }
-        });
-        await tx.messageReceipt.deleteMany({
-          where: { messageId: { in: messageIds } }
-        });
-        await tx.messageReaction.deleteMany({
-          where: { messageId: { in: messageIds } }
-        });
-        await tx.message.deleteMany({
-          where: { conversationId: id }
-        });
+    const now = /* @__PURE__ */ new Date();
+    await db_default.conversationMember.update({
+      where: { id: member.id },
+      data: {
+        leftAt: now,
+        clearedHistoryBefore: now
       }
-      const calls = await tx.call.findMany({ where: { conversationId: id } });
-      const callIds = calls.map((c) => c.id);
-      if (callIds.length > 0) {
-        await tx.callParticipant.deleteMany({ where: { callId: { in: callIds } } });
-        await tx.call.deleteMany({ where: { conversationId: id } });
-      }
-      await tx.conversationMember.deleteMany({
-        where: { conversationId: id }
-      });
-      await tx.conversation.delete({
-        where: { id }
-      });
     });
+    const activeCount = await db_default.conversationMember.count({
+      where: {
+        conversationId: id,
+        leftAt: null
+      }
+    });
+    if (activeCount === 0) {
+      await db_default.conversation.update({
+        where: { id },
+        data: { deletedAt: now }
+      });
+    }
     if (io) {
-      io.to(`conversation:${id}`).emit("conversation:deleted", {
+      io.to(`user:${callerId}`).emit("conversation:deleted", {
         conversationId: id,
         deletedByUserId: callerId
       });
     }
     res.json({
       success: true,
-      message: "Conversation and all messages were permanently deleted."
+      message: "Conversation removed from your chat list."
     });
   } catch (error) {
     console.error("[DeleteConversationError]", error);
@@ -2804,8 +2809,10 @@ router5.get("/conversations/:id/messages", authenticate, async (req, res) => {
   try {
     const { id: conversationId } = req.params;
     const callerId = req.user.id;
-    const limit = Math.min(parseInt(req.query.limit || "50", 10), 100);
+    const isAll = req.query.all === "true";
+    const limit = isAll ? 5e3 : Math.min(parseInt(req.query.limit || "150", 10), 1e3);
     const cursor = req.query.cursor;
+    const includeCleared = req.query.includeCleared === "true" || isAll;
     await purgeExpiredMessages();
     const member = await db_default.conversationMember.findUnique({
       where: {
@@ -2819,7 +2826,7 @@ router5.get("/conversations/:id/messages", authenticate, async (req, res) => {
       res.status(403).json({ error: "FORBIDDEN", message: "Not an active member of this conversation." });
       return;
     }
-    const clearedBefore = member.clearedHistoryBefore || /* @__PURE__ */ new Date(0);
+    const clearedBefore = includeCleared ? /* @__PURE__ */ new Date(0) : member.clearedHistoryBefore || /* @__PURE__ */ new Date(0);
     const now = /* @__PURE__ */ new Date();
     const whereClause = {
       conversationId,
@@ -2863,9 +2870,13 @@ router5.get("/conversations/:id/messages", authenticate, async (req, res) => {
     const hasMore = messages.length > limit;
     const returnedMessages = hasMore ? messages.slice(0, limit) : messages;
     const nextCursor = hasMore ? returnedMessages[returnedMessages.length - 1].id : null;
+    const totalCount = await db_default.message.count({
+      where: whereClause
+    });
     res.json({
       success: true,
       messages: returnedMessages,
+      totalCount,
       nextCursor,
       hasMore
     });

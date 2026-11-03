@@ -63,6 +63,8 @@ export interface SidebarProps {
   currentUserEmail: string;
   currentUserAvatar?: string | null;
   onUpdateAvatar?: (url: string) => void;
+  onExportAllChats?: () => void;
+  totalMessagesCount?: number;
   isAdmin?: boolean;
 }
 
@@ -80,6 +82,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentUserEmail,
   currentUserAvatar,
   onUpdateAvatar,
+  onExportAllChats,
+  totalMessagesCount,
   isAdmin = false,
 }) => {
   const [activeTab, setActiveTab] = useState<'chats' | 'status' | 'calls' | 'settings'>('chats');
@@ -562,6 +566,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onUpdateAvatar={onUpdateAvatar}
           onLogout={() => onLogout?.()}
           onOpenInstallModal={() => onOpenInstallModal?.()}
+          onExportAllChats={onExportAllChats}
+          totalConversationsCount={conversations.length}
+          totalMessagesCount={totalMessagesCount}
           isAdmin={isAdmin}
         />
       )}
